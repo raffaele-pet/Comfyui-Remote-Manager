@@ -3,12 +3,14 @@ import re
 import json
 import base64
 import errno
+import ctypes
 import posixpath
 import queue
 import threading
 import time
 import webbrowser
 from io import BytesIO
+from ctypes import wintypes
 from pathlib import Path
 from tkinter import Tk, StringVar, BooleanVar, filedialog, messagebox, simpledialog
 import tkinter as tk
@@ -86,8 +88,18 @@ START_CLOUDFLARED_CMD = r'cloudflared tunnel --url http://127.0.0.1:8188'
 
 URL_RE = re.compile(r"https://[a-zA-Z0-9.-]+\.trycloudflare\.com")
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
+TEXT_EXTENSIONS = {
+    ".bat", ".cmd", ".conf", ".cfg", ".css", ".csv", ".env", ".gitignore",
+    ".html", ".ini", ".js", ".json", ".log", ".md", ".ps1", ".py", ".sh",
+    ".toml", ".ts", ".tsx", ".txt", ".xml", ".yaml", ".yml",
+}
 THUMBNAIL_MAX_FILE_SIZE = 64 * 1024 * 1024
+REMOTE_TEXT_MAX_FILE_SIZE = 5 * 1024 * 1024
 UPLOAD_FOLDER_EXCLUDED_DIRS = {".git"}
+ANSI_ESCAPE_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+
+APP_DATA_DIR = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "ComfyUIRemoteManager"
+CONNECTION_PROFILE_PATH = APP_DATA_DIR / "connection.json"
 
 
 # =========================================================
@@ -115,7 +127,7 @@ DISABLED_FG = "#708096"
 class ComfyRemoteManager:
     def __init__(self, root: Tk):
         self.root = root
-        self.root.title("PC2 → PC1 ComfyUI Remote Manager v13 - stop always")
+        self.root.title("PC2 → PC1 ComfyUI Remote Manager")
         self.root.geometry("1480x820")
         self.root.minsize(1180, 720)
         self.root.configure(bg=BG)
@@ -140,12 +152,21 @@ class ComfyRemoteManager:
         self.thumbnail_cache = {}
         self.thumbnail_generation = 0
         self._icon_resize_job = None
+        self.terminal_sessions = []
+
+        profile = self.load_connection_profile()
+        saved_password = self.unprotect_password(profile.get("password", ""))
+        default_user = profile.get("user", DEFAULT_USER)
+        self.remote_home_path = f"/C:/Users/{default_user}"
 
         self.ui_queue = queue.Queue()
 
-        self.host_var = StringVar(value=DEFAULT_HOST)
-        self.user_var = StringVar(value=DEFAULT_USER)
-        self.password_var = StringVar(value="")
+        self.host_var = StringVar(value=profile.get("host", DEFAULT_HOST))
+        self.port_var = StringVar(value=str(profile.get("port", 22)))
+        self.user_var = StringVar(value=default_user)
+        self.password_var = StringVar(value=saved_password)
+        self.remember_password_var = BooleanVar(value=bool(profile.get("remember_password", False)))
+        self.host_summary_var = StringVar(value="")
         self.status_text_var = StringVar(value="ComfyUI: non connesso")
         self.link_var = StringVar(value="Nessun link disponibile")
         self.path_var = StringVar(value=self.current_remote_path)
@@ -155,9 +176,100 @@ class ComfyRemoteManager:
 
         self.setup_styles()
         self.build_ui()
+        for variable in (self.host_var, self.port_var, self.user_var):
+            variable.trace_add("write", lambda *_args: self.refresh_host_summary())
+        self.refresh_host_summary()
         self.root.after(100, self.process_ui_queue)
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         self.update_buttons()
+
+    # -----------------------------------------------------
+    # PROFILO SSH LOCALE
+    # -----------------------------------------------------
+    def load_connection_profile(self):
+        try:
+            if CONNECTION_PROFILE_PATH.exists():
+                with CONNECTION_PROFILE_PATH.open("r", encoding="utf-8") as profile_file:
+                    data = json.load(profile_file)
+                return data if isinstance(data, dict) else {}
+        except Exception:
+            pass
+        return {}
+
+    def protect_password(self, password):
+        if not password:
+            return ""
+
+        class DataBlob(ctypes.Structure):
+            _fields_ = [("cbData", wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_byte))]
+
+        raw = password.encode("utf-8")
+        raw_buffer = ctypes.create_string_buffer(raw)
+        input_blob = DataBlob(len(raw), ctypes.cast(raw_buffer, ctypes.POINTER(ctypes.c_byte)))
+        output_blob = DataBlob()
+        if not ctypes.windll.crypt32.CryptProtectData(
+            ctypes.byref(input_blob),
+            "ComfyUI Remote Manager",
+            None,
+            None,
+            None,
+            0,
+            ctypes.byref(output_blob),
+        ):
+            raise ctypes.WinError()
+        try:
+            protected = ctypes.string_at(output_blob.pbData, output_blob.cbData)
+            return base64.b64encode(protected).decode("ascii")
+        finally:
+            ctypes.windll.kernel32.LocalFree(output_blob.pbData)
+
+    def unprotect_password(self, protected_password):
+        if not protected_password:
+            return ""
+        try:
+            class DataBlob(ctypes.Structure):
+                _fields_ = [("cbData", wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_byte))]
+
+            protected = base64.b64decode(protected_password)
+            protected_buffer = ctypes.create_string_buffer(protected)
+            input_blob = DataBlob(
+                len(protected),
+                ctypes.cast(protected_buffer, ctypes.POINTER(ctypes.c_byte)),
+            )
+            output_blob = DataBlob()
+            if not ctypes.windll.crypt32.CryptUnprotectData(
+                ctypes.byref(input_blob),
+                None,
+                None,
+                None,
+                None,
+                0,
+                ctypes.byref(output_blob),
+            ):
+                return ""
+            try:
+                return ctypes.string_at(output_blob.pbData, output_blob.cbData).decode("utf-8")
+            finally:
+                ctypes.windll.kernel32.LocalFree(output_blob.pbData)
+        except Exception:
+            return ""
+
+    def save_connection_profile(self, host, port, user, password, remember_password):
+        try:
+            APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
+            profile = {
+                "host": host,
+                "port": port,
+                "user": user,
+                "remember_password": remember_password,
+                "password": self.protect_password(password) if remember_password else "",
+            }
+            temporary_path = CONNECTION_PROFILE_PATH.with_suffix(".tmp")
+            with temporary_path.open("w", encoding="utf-8") as profile_file:
+                json.dump(profile, profile_file, indent=2)
+            temporary_path.replace(CONNECTION_PROFILE_PATH)
+        except Exception as error:
+            self.enqueue("output", f"Profilo SSH non salvato: {error}")
 
     # -----------------------------------------------------
     # UI SETUP
@@ -205,8 +317,175 @@ class ComfyRemoteManager:
         else:
             btn.configure(state="disabled", bg=DISABLED_BG, cursor="arrow")
 
+    def build_ssh_sidebar(self, parent):
+        sidebar = tk.Frame(parent, bg="#0b1220", width=248, highlightthickness=1, highlightbackground=BORDER)
+        sidebar.pack(side="left", fill="y")
+        sidebar.pack_propagate(False)
+
+        title_row = tk.Frame(sidebar, bg="#0b1220")
+        title_row.pack(fill="x", padx=14, pady=(14, 4))
+        tk.Label(
+            title_row,
+            text="SSH PC1",
+            bg="#0b1220",
+            fg=TEXT,
+            font=("Segoe UI", 13, "bold"),
+        ).pack(side="left")
+
+        host_card = tk.Frame(sidebar, bg=PANEL, highlightthickness=1, highlightbackground=BORDER)
+        host_card.pack(fill="x", padx=10, pady=(4, 10))
+        card_top = tk.Frame(host_card, bg=PANEL)
+        card_top.pack(fill="x", padx=10, pady=(9, 3))
+        self.connection_status_dot = tk.Canvas(card_top, width=12, height=12, bg=PANEL, highlightthickness=0)
+        self.connection_status_dot.pack(side="left", padx=(0, 7))
+        self.connection_status_dot.create_oval(2, 2, 10, 10, fill="#6b7280", outline="#6b7280")
+        tk.Label(card_top, text="pc-lavoro", bg=PANEL, fg=TEXT,
+                 font=("Segoe UI", 10, "bold")).pack(side="left")
+        self.conn_label = tk.Label(host_card, text="Non connesso", bg=PANEL, fg=MUTED,
+                                   anchor="w", font=("Segoe UI", 8))
+        self.conn_label.pack(fill="x", padx=10)
+        tk.Label(host_card, textvariable=self.host_summary_var, bg=PANEL, fg="#7ea6d8",
+                 anchor="w", font=("Consolas", 8)).pack(fill="x", padx=10, pady=(2, 9))
+
+        self.sidebar_field(sidebar, "Host / IP Tailscale", self.host_var)
+        connection_row = tk.Frame(sidebar, bg="#0b1220")
+        connection_row.pack(fill="x", padx=10)
+        self.sidebar_field(connection_row, "Utente", self.user_var, side="left", width=15)
+        self.sidebar_field(connection_row, "Porta", self.port_var, side="left", width=6)
+        self.sidebar_field(sidebar, "Password", self.password_var, show="*")
+
+        remember = tk.Checkbutton(
+            sidebar,
+            text="Ricorda password su questo PC",
+            variable=self.remember_password_var,
+            bg="#0b1220",
+            fg=MUTED,
+            activebackground="#0b1220",
+            activeforeground=TEXT,
+            selectcolor=INPUT_BG,
+            highlightthickness=0,
+            font=("Segoe UI", 8),
+        )
+        remember.pack(anchor="w", padx=10, pady=(0, 8))
+
+        button_row = tk.Frame(sidebar, bg="#0b1220")
+        button_row.pack(fill="x", padx=10)
+        self.btn_connect = self.make_button(button_row, "Connetti", self.connect, BLUE, BLUE_HOVER, width=9)
+        self.btn_connect.pack(side="left", fill="x", expand=True, padx=(0, 3))
+        self.btn_disconnect = self.make_button(
+            button_row, "Disconnetti", self.disconnect, "#303a49", "#3b4658", width=9
+        )
+        self.btn_disconnect.pack(side="left", fill="x", expand=True, padx=(3, 0))
+
+        tk.Frame(sidebar, bg=BORDER, height=1).pack(fill="x", padx=10, pady=14)
+        tk.Label(sidebar, text="FILE REMOTI", bg="#0b1220", fg=MUTED,
+                 anchor="w", font=("Segoe UI", 8, "bold")).pack(fill="x", padx=12, pady=(0, 5))
+
+        self.sidebar_remote_buttons = []
+        remote_actions = [
+            ("⌂  Home utente", self.open_remote_home),
+            ("▣  Desktop", self.open_remote_desktop),
+        ]
+        for label, command in remote_actions:
+            button = self.make_button(sidebar, label, command, "#172235", "#22314a")
+            button.configure(anchor="w")
+            button.pack(fill="x", padx=10, pady=2)
+            self.sidebar_remote_buttons.append(button)
+
+        tk.Frame(sidebar, bg=BORDER, height=1).pack(fill="x", padx=10, pady=14)
+        tk.Label(sidebar, text="STRUMENTI SSH", bg="#0b1220", fg=MUTED,
+                 anchor="w", font=("Segoe UI", 8, "bold")).pack(fill="x", padx=12, pady=(0, 5))
+
+        self.btn_ssh_terminal = self.make_button(
+            sidebar,
+            ">_  Terminale PowerShell",
+            lambda: self.open_remote_terminal(self.remote_home_path),
+            GREEN,
+            GREEN_HOVER,
+        )
+        self.btn_ssh_terminal.configure(anchor="w")
+        self.btn_ssh_terminal.pack(fill="x", padx=10, pady=2)
+        self.sidebar_remote_buttons.append(self.btn_ssh_terminal)
+
+        copy_command = self.make_button(
+            sidebar,
+            "⧉  Copia comando SSH",
+            self.copy_ssh_command,
+            "#303a49",
+            "#3b4658",
+        )
+        copy_command.configure(anchor="w")
+        copy_command.pack(fill="x", padx=10, pady=2)
+
+        tk.Label(
+            sidebar,
+            text="La password ricordata è cifrata\ncon la protezione di Windows.",
+            bg="#0b1220",
+            fg="#64748b",
+            justify="left",
+            font=("Segoe UI", 7),
+        ).pack(side="bottom", anchor="w", padx=12, pady=12)
+
+    def sidebar_field(self, parent, label, variable, show=None, side="top", width=None):
+        container = tk.Frame(parent, bg="#0b1220")
+        if side == "left":
+            container.pack(side="left", fill="x", expand=True, padx=(0, 5), pady=(0, 7))
+        else:
+            container.pack(fill="x", padx=10, pady=(0, 7))
+        tk.Label(container, text=label, bg="#0b1220", fg=MUTED, anchor="w",
+                 font=("Segoe UI", 8)).pack(fill="x", pady=(0, 2))
+        entry = tk.Entry(
+            container,
+            textvariable=variable,
+            bg=INPUT_BG,
+            fg=TEXT,
+            insertbackground=TEXT,
+            relief="flat",
+            show=show,
+            width=width,
+            font=("Segoe UI", 9),
+        )
+        entry.pack(fill="x", ipady=5)
+        return entry
+
+    def refresh_host_summary(self):
+        host = self.host_var.get().strip() or "host"
+        user = self.user_var.get().strip() or "utente"
+        port = self.port_var.get().strip() or "22"
+        self.host_summary_var.set(f"{user}@{host}:{port}")
+
+    def draw_connection_status(self, connected):
+        color = "#2ea043" if connected else "#6b7280"
+        self.connection_status_dot.delete("all")
+        self.connection_status_dot.create_oval(2, 2, 10, 10, fill=color, outline=color)
+
+    def open_remote_home(self):
+        self.open_folder(self.remote_home_path)
+
+    def open_remote_desktop(self):
+        self.open_folder(posixpath.join(self.remote_home_path.rstrip("/"), "Desktop"))
+
+    def copy_ssh_command(self):
+        host = self.host_var.get().strip()
+        user = self.user_var.get().strip()
+        port = self.port_var.get().strip() or "22"
+        if not host or not user:
+            return
+        command = f"ssh -p {port} {user}@{host}"
+        self.root.clipboard_clear()
+        self.root.clipboard_append(command)
+        self.append_output(f"Comando copiato: {command}")
+
     def build_ui(self):
-        header = tk.Frame(self.root, bg=BG)
+        shell = tk.Frame(self.root, bg=BG)
+        shell.pack(fill="both", expand=True)
+
+        self.build_ssh_sidebar(shell)
+
+        content = tk.Frame(shell, bg=BG)
+        content.pack(side="left", fill="both", expand=True)
+
+        header = tk.Frame(content, bg=BG)
         header.pack(fill="x", padx=12, pady=(8, 4))
         tk.Label(header, text="ComfyUI Remote Manager", bg=BG, fg=TEXT,
                  font=("Segoe UI", 19, "bold")).pack(anchor="w")
@@ -218,21 +497,7 @@ class ComfyRemoteManager:
             font=("Segoe UI", 9),
         ).pack(anchor="w", pady=(2, 0))
 
-        conn = self.panel(self.root, "Connessione PC1")
-        conn.pack(fill="x", padx=12, pady=3)
-        row = tk.Frame(conn, bg=PANEL)
-        row.pack(fill="x")
-        self.add_labeled_entry(row, "Host/IP Tailscale", self.host_var, width=16)
-        self.add_labeled_entry(row, "Utente", self.user_var, width=10)
-        self.add_labeled_entry(row, "Password", self.password_var, width=15, show="*")
-        self.btn_connect = self.make_button(row, "Connetti", self.connect, BLUE, BLUE_HOVER, width=10)
-        self.btn_connect.pack(side="left", padx=(6, 4))
-        self.btn_disconnect = self.make_button(row, "Disconnetti", self.disconnect, BLUE, BLUE_HOVER, width=10)
-        self.btn_disconnect.pack(side="left", padx=4)
-        self.conn_label = tk.Label(row, text="Non connesso", bg=PANEL, fg=MUTED, font=("Segoe UI", 9))
-        self.conn_label.pack(side="left", padx=8)
-
-        remote_controls = tk.Frame(self.root, bg=BG)
+        remote_controls = tk.Frame(content, bg=BG)
         remote_controls.pack(fill="x", padx=12, pady=3)
 
         actions = self.panel(remote_controls, "Azioni remote")
@@ -269,7 +534,7 @@ class ComfyRemoteManager:
         self.btn_copy_link.pack(side="left", padx=(3, 0))
 
         main = tk.PanedWindow(
-            self.root,
+            content,
             orient="horizontal",
             bg=BG,
             bd=0,
@@ -492,6 +757,8 @@ class ComfyRemoteManager:
 
         self.set_button_enabled(self.btn_connect, not connected and not busy)
         self.set_button_enabled(self.btn_disconnect, connected and not busy)
+        for button in self.sidebar_remote_buttons:
+            self.set_button_enabled(button, connected and not busy)
 
         # Regole richieste.
         # Modifica minima rispetto alla v13 funzionante:
@@ -526,7 +793,10 @@ class ComfyRemoteManager:
                 elif kind == "connected":
                     self.connected = args[0]
                     self.conn_label.config(text=args[1] if len(args) > 1 else ("Connesso" if args[0] else "Non connesso"))
+                    self.draw_connection_status(args[0])
                     self.update_buttons()
+                elif kind == "remote_home":
+                    self.remote_home_path = args[0]
                 elif kind == "link":
                     self.current_link = args[0]
                     self.link_var.set(args[0] if args[0] else "Nessun link disponibile")
@@ -559,6 +829,15 @@ class ComfyRemoteManager:
                 elif kind == "preview_error":
                     preview, error = args
                     self.show_preview_error(preview, error)
+                elif kind == "editor_loaded":
+                    editor, content, encoding = args
+                    self.apply_remote_text(editor, content, encoding)
+                elif kind == "editor_error":
+                    editor, error = args
+                    self.show_remote_editor_error(editor, error)
+                elif kind == "editor_saved":
+                    editor = args[0]
+                    self.finish_remote_text_save(editor)
         except queue.Empty:
             pass
         self.root.after(100, self.process_ui_queue)
@@ -572,31 +851,61 @@ class ComfyRemoteManager:
         host = self.host_var.get().strip()
         user = self.user_var.get().strip()
         password = self.password_var.get()
+        remember_password = bool(self.remember_password_var.get())
         if not host or not user:
             messagebox.showwarning("Dati mancanti", "Inserisci host e utente.")
             return
+        try:
+            port = int(self.port_var.get().strip() or "22")
+            if not 1 <= port <= 65535:
+                raise ValueError
+        except ValueError:
+            messagebox.showwarning("Porta non valida", "Inserisci una porta SSH valida (1-65535).")
+            return
         self.busy = True
         self.update_buttons()
-        threading.Thread(target=self._connect_thread, args=(host, user, password), daemon=True).start()
+        threading.Thread(
+            target=self._connect_thread,
+            args=(host, port, user, password, remember_password),
+            daemon=True,
+        ).start()
 
-    def _connect_thread(self, host, user, password):
+    def _connect_thread(self, host, port, user, password, remember_password):
         try:
-            self.enqueue("output", f"Connessione SSH a {user}@{host}...")
+            self.enqueue("output", f"Connessione SSH a {user}@{host}:{port}...")
             client = paramiko.SSHClient()
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            client.connect(hostname=host, username=user, password=password, timeout=15, banner_timeout=20, auth_timeout=20)
+            client.connect(
+                hostname=host,
+                port=port,
+                username=user,
+                password=password or None,
+                timeout=15,
+                banner_timeout=20,
+                auth_timeout=20,
+                look_for_keys=True,
+                allow_agent=True,
+            )
             sftp = client.open_sftp()
             self.client = client
             self.sftp = sftp
-            self.enqueue("connected", True, f"Connesso a {user}@{host}")
+            self.connected = True
+            try:
+                remote_home = self.normalize_sftp_path(sftp.normalize("."))
+            except Exception:
+                remote_home = f"/C:/Users/{user}"
+            self.enqueue("remote_home", remote_home)
+            self.save_connection_profile(host, port, user, password, remember_password)
+            self.enqueue("connected", True, f"Connesso a {user}@{host}:{port}")
             self.enqueue("output", "Connessione riuscita.")
             self.enqueue("busy", False)
             self.check_status_async()
-            self.open_folder(REMOTE_COMFY_DIR_SFTP)
+            self.open_folder(remote_home)
             self.start_status_monitor()
         except Exception as e:
             self.client = None
             self.sftp = None
+            self.connected = False
             self.enqueue("connected", False, "Non connesso")
             self.enqueue("busy", False)
             self.enqueue("status", "unknown")
@@ -605,6 +914,8 @@ class ComfyRemoteManager:
     def disconnect(self):
         self._stop_monitor = True
         self.busy = False
+        for terminal in list(self.terminal_sessions):
+            self.close_remote_terminal(terminal)
         try:
             self.close_remote_channels()
         except Exception:
@@ -630,6 +941,7 @@ class ComfyRemoteManager:
         self.current_link = ""
         self.link_var.set("Nessun link disponibile")
         self.conn_label.config(text="Non connesso")
+        self.draw_connection_status(False)
         self.set_status("unknown")
         try:
             self.tree.delete(*self.tree.get_children())
@@ -1332,6 +1644,13 @@ class ComfyRemoteManager:
     def is_image_file(self, name):
         return Path(name).suffix.lower() in IMAGE_EXTENSIONS
 
+    def is_text_file(self, name):
+        lower_name = name.lower()
+        return (
+            Path(lower_name).suffix in TEXT_EXTENSIONS
+            or lower_name in {"dockerfile", "license", "makefile", "readme", ".gitignore", ".gitattributes"}
+        )
+
     def open_or_preview_item(self, item):
         if not item:
             return
@@ -1339,6 +1658,8 @@ class ComfyRemoteManager:
             self.open_folder(item["path"])
         elif self.is_image_file(item["name"]):
             self.preview_remote_image(item)
+        elif self.is_text_file(item["name"]):
+            self.edit_remote_text_file(item)
 
     def on_tree_right_click(self, event):
         if not self.connected or not self.sftp or self.busy:
@@ -1366,6 +1687,8 @@ class ComfyRemoteManager:
             else:
                 if self.is_image_file(item["name"]):
                     menu.add_command(label="Anteprima", command=lambda current=item: self.preview_remote_image(current))
+                elif self.is_text_file(item["name"]):
+                    menu.add_command(label="Apri / modifica", command=lambda current=item: self.edit_remote_text_file(current))
                 menu.add_command(label="Scarica su PC2...", command=self.download_selected_file)
                 menu.add_separator()
             menu.add_command(label="Rinomina", command=self.rename_selected_item)
@@ -1776,6 +2099,208 @@ class ComfyRemoteManager:
             fg="#f85149",
         )
 
+    def edit_remote_text_file(self, item):
+        if not self.ensure_connected():
+            return
+        if item.get("raw_size", 0) > REMOTE_TEXT_MAX_FILE_SIZE:
+            messagebox.showwarning(
+                "File troppo grande",
+                "L'editor remoto apre file di testo fino a 5 MB. Puoi comunque scaricarlo su PC2.",
+            )
+            return
+
+        editor = {
+            "window": tk.Toplevel(self.root),
+            "item": dict(item),
+            "dirty": False,
+            "encoding": "utf-8",
+            "loading": True,
+        }
+        window = editor["window"]
+        window.title(f"Editor remoto PC1 - {item['name']}")
+        window.geometry("1000x680")
+        window.minsize(700, 450)
+        window.configure(bg=BG)
+        window.protocol("WM_DELETE_WINDOW", lambda: self.close_remote_text_editor(editor))
+
+        toolbar = tk.Frame(window, bg=PANEL)
+        toolbar.pack(fill="x")
+        tk.Label(toolbar, text=item["path"], bg=PANEL, fg=MUTED, anchor="w",
+                 font=("Consolas", 9)).pack(side="left", fill="x", expand=True, padx=10, pady=9)
+        save_button = self.make_button(
+            toolbar,
+            "Salva su PC1",
+            lambda: self.save_remote_text(editor),
+            GREEN,
+            GREEN_HOVER,
+            width=12,
+        )
+        save_button.pack(side="right", padx=(4, 8), pady=5)
+        editor["save_button"] = save_button
+        reload_button = self.make_button(
+            toolbar,
+            "Ricarica",
+            lambda: self.reload_remote_text(editor),
+            "#303a49",
+            "#3b4658",
+            width=8,
+        )
+        reload_button.pack(side="right", padx=4, pady=5)
+        editor["reload_button"] = reload_button
+
+        text_frame = tk.Frame(window, bg=BG)
+        text_frame.pack(fill="both", expand=True, padx=10, pady=(10, 5))
+        text_widget = tk.Text(
+            text_frame,
+            bg="#080f1d",
+            fg="#d6e2f0",
+            insertbackground=TEXT,
+            selectbackground="#243b61",
+            relief="flat",
+            wrap="none",
+            undo=True,
+            font=("Consolas", 10),
+        )
+        text_widget.pack(side="left", fill="both", expand=True)
+        vertical = ttk.Scrollbar(text_frame, orient="vertical", command=text_widget.yview)
+        vertical.pack(side="right", fill="y")
+        horizontal = ttk.Scrollbar(window, orient="horizontal", command=text_widget.xview)
+        horizontal.pack(fill="x", padx=10)
+        text_widget.configure(yscrollcommand=vertical.set, xscrollcommand=horizontal.set, state="disabled")
+        editor["text"] = text_widget
+
+        status_var = StringVar(value="Caricamento dal PC1...")
+        editor["status_var"] = status_var
+        tk.Label(window, textvariable=status_var, bg=BG, fg=MUTED, anchor="w",
+                 font=("Segoe UI", 8)).pack(fill="x", padx=10, pady=(4, 8))
+
+        self.set_button_enabled(save_button, False)
+        threading.Thread(target=self._load_remote_text_thread, args=(editor,), daemon=True).start()
+
+    def _load_remote_text_thread(self, editor):
+        editor_sftp = None
+        try:
+            editor_sftp = self.client.open_sftp()
+            with editor_sftp.open(editor["item"]["path"], "rb") as remote_file:
+                data = remote_file.read(REMOTE_TEXT_MAX_FILE_SIZE + 1)
+            if len(data) > REMOTE_TEXT_MAX_FILE_SIZE:
+                raise ValueError("Il file supera il limite di 5 MB dell'editor remoto.")
+            if data.startswith(b"\xef\xbb\xbf"):
+                content = data.decode("utf-8-sig")
+                encoding = "utf-8-sig"
+            else:
+                try:
+                    content = data.decode("utf-8")
+                    encoding = "utf-8"
+                except UnicodeDecodeError:
+                    content = data.decode("cp1252")
+                    encoding = "cp1252"
+            self.enqueue("editor_loaded", editor, content, encoding)
+        except Exception as error:
+            self.enqueue("editor_error", editor, error)
+        finally:
+            if editor_sftp:
+                try:
+                    editor_sftp.close()
+                except Exception:
+                    pass
+
+    def apply_remote_text(self, editor, content, encoding):
+        window = editor.get("window")
+        if not window or not window.winfo_exists():
+            return
+        text_widget = editor["text"]
+        text_widget.configure(state="normal")
+        text_widget.delete("1.0", "end")
+        text_widget.insert("1.0", content)
+        text_widget.edit_reset()
+        text_widget.edit_modified(False)
+        text_widget.bind("<<Modified>>", lambda _event: self.mark_remote_text_modified(editor))
+        editor["encoding"] = encoding
+        editor["dirty"] = False
+        editor["loading"] = False
+        editor["status_var"].set(f"Caricato da PC1 · {encoding} · {len(content):,} caratteri")
+        self.set_button_enabled(editor["save_button"], True)
+        text_widget.focus_set()
+
+    def mark_remote_text_modified(self, editor):
+        text_widget = editor.get("text")
+        if not text_widget or not text_widget.edit_modified():
+            return
+        text_widget.edit_modified(False)
+        if editor.get("loading"):
+            return
+        editor["dirty"] = True
+        editor["status_var"].set("Modifiche non salvate")
+
+    def save_remote_text(self, editor):
+        if editor.get("loading") or not self.ensure_connected():
+            return
+        content = editor["text"].get("1.0", "end-1c")
+        editor["status_var"].set("Salvataggio su PC1...")
+        self.set_button_enabled(editor["save_button"], False)
+        threading.Thread(
+            target=self._save_remote_text_thread,
+            args=(editor, content, editor["encoding"]),
+            daemon=True,
+        ).start()
+
+    def _save_remote_text_thread(self, editor, content, encoding):
+        editor_sftp = None
+        try:
+            editor_sftp = self.client.open_sftp()
+            encoded = content.encode(encoding)
+            with editor_sftp.open(editor["item"]["path"], "wb") as remote_file:
+                remote_file.write(encoded)
+            self.enqueue("editor_saved", editor)
+        except Exception as error:
+            self.enqueue("editor_error", editor, error)
+        finally:
+            if editor_sftp:
+                try:
+                    editor_sftp.close()
+                except Exception:
+                    pass
+
+    def finish_remote_text_save(self, editor):
+        window = editor.get("window")
+        if not window or not window.winfo_exists():
+            return
+        editor["dirty"] = False
+        editor["status_var"].set(f"Salvato su PC1 · {time.strftime('%H:%M:%S')}")
+        self.set_button_enabled(editor["save_button"], True)
+        self.refresh_folder()
+
+    def show_remote_editor_error(self, editor, error):
+        window = editor.get("window")
+        if not window or not window.winfo_exists():
+            return
+        editor["loading"] = False
+        editor["status_var"].set(f"Errore: {error}")
+        self.set_button_enabled(editor["save_button"], self.ensure_connected())
+        messagebox.showerror("Editor remoto", str(error), parent=window)
+
+    def reload_remote_text(self, editor):
+        if editor.get("dirty") and not messagebox.askyesno(
+            "Scartare modifiche?",
+            "Ricaricando il file perderai le modifiche non salvate. Continuare?",
+            parent=editor["window"],
+        ):
+            return
+        editor["loading"] = True
+        editor["status_var"].set("Ricaricamento dal PC1...")
+        self.set_button_enabled(editor["save_button"], False)
+        threading.Thread(target=self._load_remote_text_thread, args=(editor,), daemon=True).start()
+
+    def close_remote_text_editor(self, editor):
+        if editor.get("dirty") and not messagebox.askyesno(
+            "Modifiche non salvate",
+            "Chiudere l'editor e perdere le modifiche non salvate?",
+            parent=editor["window"],
+        ):
+            return
+        editor["window"].destroy()
+
     def open_remote_terminal(self, remote_path):
         if not self.ensure_connected():
             return
@@ -1783,17 +2308,20 @@ class ComfyRemoteManager:
         terminal = {
             "window": tk.Toplevel(self.root),
             "path": remote_path,
-            "running": False,
+            "channel": None,
+            "closed": False,
         }
+        self.terminal_sessions.append(terminal)
         window = terminal["window"]
-        window.title(f"Terminale remoto PC1 - {remote_path}")
+        window.title(f"SSH pc-lavoro - {remote_path}")
         window.geometry("900x560")
         window.minsize(650, 400)
         window.configure(bg=BG)
+        window.protocol("WM_DELETE_WINDOW", lambda: self.close_remote_terminal(terminal))
 
         tk.Label(
             window,
-            text=f"PowerShell remoto in: {remote_path}",
+            text=f"PowerShell SSH persistente · {self.user_var.get()}@{self.host_var.get()} · {remote_path}",
             bg=BG,
             fg=TEXT,
             anchor="w",
@@ -1813,9 +2341,10 @@ class ComfyRemoteManager:
         terminal["output"] = output
         output.insert(
             "end",
-            "Ogni comando viene eseguito nella cartella indicata su PC1.\n"
-            "Puoi usare, ad esempio: git clone <URL>\n\n",
+            "Apertura della sessione SSH interattiva...\n"
+            "La cartella e lo stato di PowerShell restano attivi tra un comando e l'altro.\n\n",
         )
+        output.configure(state="disabled")
 
         command_row = tk.Frame(window, bg=BG)
         command_row.pack(fill="x", padx=12, pady=(0, 12))
@@ -1841,81 +2370,104 @@ class ComfyRemoteManager:
         run_button.pack(side="right")
         terminal["run_button"] = run_button
         entry.bind("<Return>", lambda _event: self.run_terminal_command(terminal))
+        interrupt_button = self.make_button(
+            command_row,
+            "Ctrl+C",
+            lambda: self.interrupt_remote_terminal(terminal),
+            RED,
+            RED_HOVER,
+            width=7,
+        )
+        interrupt_button.pack(side="right", padx=(0, 6))
+        terminal["interrupt_button"] = interrupt_button
         entry.focus_set()
 
+        try:
+            channel = self.client.invoke_shell(term="xterm", width=140, height=40)
+            terminal["channel"] = channel
+            path_win = self.sftp_to_windows_path(remote_path)
+            channel.send("powershell.exe -NoLogo -NoProfile\r\n")
+            channel.send(f"Set-Location -LiteralPath {self.ps_literal(path_win)}\r\n")
+            threading.Thread(target=self._terminal_reader_thread, args=(terminal,), daemon=True).start()
+        except Exception as error:
+            self.append_terminal_output(terminal, f"Impossibile aprire il terminale SSH: {error}\n")
+            self.set_button_enabled(run_button, False)
+            self.set_button_enabled(interrupt_button, False)
+
     def run_terminal_command(self, terminal):
-        if terminal.get("running") or not self.ensure_connected():
+        if terminal.get("closed") or not self.ensure_connected():
             return
         entry = terminal["entry"]
-        command_text = entry.get().strip()
+        command_text = entry.get()
         if not command_text:
             return
-        if command_text.lower() in ("clear", "cls"):
-            terminal["output"].delete("1.0", "end")
-            entry.delete(0, "end")
-            return
-
-        self.append_terminal_output(terminal, f"> {command_text}\n")
         entry.delete(0, "end")
-        terminal["running"] = True
-        self.set_button_enabled(terminal["run_button"], False)
-        threading.Thread(
-            target=self._terminal_command_thread,
-            args=(terminal, command_text),
-            daemon=True,
-        ).start()
-
-    def _terminal_command_thread(self, terminal, command_text):
         try:
-            path_win = self.sftp_to_windows_path(terminal["path"])
-            script = (
-                f"Set-Location -LiteralPath {self.ps_literal(path_win)}; "
-                f"& {{ {command_text} }}; "
-                "if ($null -ne $LASTEXITCODE) { exit $LASTEXITCODE }"
-            )
-            command = self.powershell_encoded_command(script)
-            _stdin, stdout, _stderr = self.client.exec_command(command, get_pty=False, timeout=None)
-            channel = stdout.channel
+            terminal["channel"].send(command_text + "\r\n")
+        except Exception as error:
+            self.append_terminal_output(terminal, f"\n[Errore invio comando: {error}]\n")
 
-            while True:
-                received = False
+    def _terminal_reader_thread(self, terminal):
+        channel = terminal.get("channel")
+        try:
+            while channel and not terminal.get("closed"):
                 if channel.recv_ready():
-                    data = channel.recv(4096).decode("utf-8", errors="replace")
+                    data = channel.recv(8192).decode("utf-8", errors="replace")
                     if data:
+                        data = ANSI_ESCAPE_RE.sub("", data).replace("\r\r\n", "\n").replace("\r\n", "\n")
                         self.enqueue("terminal_output", terminal, data)
-                    received = True
-                if channel.recv_stderr_ready():
-                    data = channel.recv_stderr(4096).decode("utf-8", errors="replace")
-                    if data:
-                        self.enqueue("terminal_output", terminal, data)
-                    received = True
-                if channel.exit_status_ready() and not channel.recv_ready() and not channel.recv_stderr_ready():
+                elif channel.closed or channel.exit_status_ready():
                     break
-                if not received:
+                else:
                     time.sleep(0.05)
-
-            code = channel.recv_exit_status()
-            self.enqueue("terminal_output", terminal, f"\n[Exit code: {code}]\n\n")
-        except Exception as e:
-            self.enqueue("terminal_output", terminal, f"\n[Errore terminale: {e}]\n\n")
+        except Exception as error:
+            if not terminal.get("closed"):
+                self.enqueue("terminal_output", terminal, f"\n[Sessione SSH interrotta: {error}]\n")
         finally:
             self.enqueue("terminal_done", terminal)
+
+    def interrupt_remote_terminal(self, terminal):
+        channel = terminal.get("channel")
+        if channel and not channel.closed:
+            try:
+                channel.send("\x03")
+            except Exception:
+                pass
+
+    def close_remote_terminal(self, terminal):
+        terminal["closed"] = True
+        channel = terminal.get("channel")
+        if channel:
+            try:
+                channel.close()
+            except Exception:
+                pass
+        if terminal in self.terminal_sessions:
+            self.terminal_sessions.remove(terminal)
+        window = terminal.get("window")
+        try:
+            if window and window.winfo_exists():
+                window.destroy()
+        except Exception:
+            pass
 
     def append_terminal_output(self, terminal, text):
         window = terminal.get("window")
         if not window or not window.winfo_exists():
             return
         output = terminal["output"]
+        output.configure(state="normal")
         output.insert("end", text)
         output.see("end")
+        output.configure(state="disabled")
 
     def finish_terminal_command(self, terminal):
         window = terminal.get("window")
-        terminal["running"] = False
         if not window or not window.winfo_exists():
             return
-        self.set_button_enabled(terminal["run_button"], True)
-        terminal["entry"].focus_set()
+        self.append_terminal_output(terminal, "\n[Sessione SSH chiusa]\n")
+        self.set_button_enabled(terminal["run_button"], False)
+        self.set_button_enabled(terminal["interrupt_button"], False)
 
     def sftp_to_windows_path(self, path):
         path = self.normalize_sftp_path(path)
@@ -2363,6 +2915,8 @@ class ComfyRemoteManager:
     # -----------------------------------------------------
     def on_close(self):
         self._stop_monitor = True
+        for terminal in list(self.terminal_sessions):
+            self.close_remote_terminal(terminal)
         try:
             if self.sftp:
                 self.sftp.close()
