@@ -46,7 +46,7 @@ Adatta questi valori se l'indirizzo Tailscale, l'utente o la cartella di ComfyUI
 
 ## Avvio
 
-Su Windows puoi avviare l'app con un doppio clic su `Avvia ComfyUI Remote Manager.bat`.
+Su Windows puoi avviare l'app con un doppio clic su `run.bat`.
 
 In alternativa, dal terminale:
 
