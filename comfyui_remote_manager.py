@@ -8,6 +8,9 @@ import posixpath
 import queue
 import threading
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 import webbrowser
 from io import BytesIO
 from ctypes import wintypes
@@ -50,24 +53,79 @@ REMOTE_DOWNLOAD_HELPER_WIN = r"C:\Users\tesi\Desktop\comfy_remote_download_helpe
 COMFY_PORT = 8188
 COMFY_LOCAL_URL = "http://127.0.0.1:8188/system_stats"
 
-# Comando di avvio ComfyUI verificato per PC1.
-# Non usare la forma cmd /c ""C:\...\run_nvidia_gpu.bat"".
-START_COMFY_CMD = rf'cd /d "{REMOTE_COMFY_DIR_WIN}" && run_nvidia_gpu.bat'
+START_COMFY_BATCH_WIN = rf"{REMOTE_COMFY_DIR_WIN}\run_nvidia_gpu.bat"
 UPDATE_COMFY_CMD = rf'cd /d "{REMOTE_UPDATE_DIR_WIN}" && update_comfyui.bat'
 
-# Stop compatto: chiude cloudflared e il processo in ascolto su 8188.
-STOP_COMFY_CMD = (
-    "powershell -NoProfile -Command "
-    "\"$ErrorActionPreference='SilentlyContinue'; "
-    "Stop-Process -Name cloudflared -Force; "
-    f"$ids = Get-NetTCPConnection -LocalPort {COMFY_PORT} -State Listen | Select-Object -ExpandProperty OwningProcess -Unique; "
-    "foreach ($procId in $ids) { Write-Output ('Chiudo processo sulla porta 8188: PID ' + $procId); Stop-Process -Id $procId -Force }; "
-    "Start-Sleep -Seconds 2; "
-    f"$left = Get-NetTCPConnection -LocalPort {COMFY_PORT} -State Listen; "
-    "if ($left) { Write-Output 'PORTA_8188_OCCUPATA'; exit 1 } else { Write-Output 'PORTA_8188_LIBERA'; exit 0 }\""
-)
+STOP_ALL_REMOTE_SCRIPT = rf'''
+$ErrorActionPreference = 'SilentlyContinue'
+$comfyRoot = '{REMOTE_COMFY_DIR_WIN}'
 
-KILL_CLOUDFLARED_CMD = r'taskkill /IM cloudflared.exe /F /T 2>nul'
+function Get-ComfyTargets {{
+    $targets = @()
+    $targets += Get-CimInstance Win32_Process | Where-Object {{
+        $_.ProcessId -ne $PID -and (
+            $_.Name -ieq 'cloudflared.exe' -or
+            ($_.CommandLine -and (
+                $_.CommandLine -match 'cloudflared(?:\.exe)?\s+tunnel' -or
+                ($_.CommandLine.IndexOf($comfyRoot, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -and
+                 $_.Name -match '^(python|pythonw|cmd|powershell)\.exe$')
+            ))
+        )
+    }} | Select-Object -ExpandProperty ProcessId
+    $targets += Get-NetTCPConnection -LocalPort {COMFY_PORT} -State Listen |
+        Select-Object -ExpandProperty OwningProcess
+    return @($targets | Where-Object {{ $_ -and $_ -ne $PID }} | Sort-Object -Unique)
+}}
+
+for ($attempt = 1; $attempt -le 4; $attempt++) {{
+    $targets = @(Get-ComfyTargets)
+    if ($targets.Count -eq 0) {{ break }}
+    Write-Output ('Tentativo stop ' + $attempt + ': PID ' + ($targets -join ', '))
+    foreach ($targetPid in $targets) {{
+        & taskkill.exe /PID $targetPid /T /F 2>$null | Out-Null
+    }}
+    Start-Sleep -Seconds 1
+}}
+
+Remove-Item -LiteralPath '{REMOTE_CLOUDFLARE_OUTPUT_SFTP[1:].replace('/', chr(92))}' -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath '{REMOTE_CLOUDFLARE_LINK_SFTP[1:].replace('/', chr(92))}' -Force -ErrorAction SilentlyContinue
+
+$remainingTargets = @(Get-ComfyTargets)
+$remainingCloudflared = @(Get-Process -Name cloudflared -ErrorAction SilentlyContinue)
+$remainingListeners = @(Get-NetTCPConnection -LocalPort {COMFY_PORT} -State Listen -ErrorAction SilentlyContinue)
+
+Write-Output ('Verifica finale: processi=' + $remainingTargets.Count +
+              ', cloudflared=' + $remainingCloudflared.Count +
+              ', listener_8188=' + $remainingListeners.Count)
+
+if ($remainingTargets.Count -eq 0 -and
+    $remainingCloudflared.Count -eq 0 -and
+    $remainingListeners.Count -eq 0) {{
+    Write-Output 'STOP_ALL_OK'
+    exit 0
+}}
+
+Write-Output 'STOP_ALL_FAILED'
+exit 1
+'''
+
+STOP_CLOUDFLARED_ONLY_SCRIPT = r'''
+$ErrorActionPreference = 'SilentlyContinue'
+for ($attempt = 1; $attempt -le 3; $attempt++) {
+    $targets = @(Get-CimInstance Win32_Process | Where-Object {
+        $_.Name -ieq 'cloudflared.exe' -or
+        ($_.CommandLine -and $_.CommandLine -match 'cloudflared(?:\.exe)?\s+tunnel')
+    } | Select-Object -ExpandProperty ProcessId | Sort-Object -Unique)
+    if ($targets.Count -eq 0) { break }
+    foreach ($targetPid in $targets) {
+        & taskkill.exe /PID $targetPid /T /F 2>$null | Out-Null
+    }
+    Start-Sleep -Seconds 1
+}
+$remaining = @(Get-Process -Name cloudflared -ErrorAction SilentlyContinue).Count
+Write-Output ('CLOUDFLARED_REMAINING=' + $remaining)
+if ($remaining -eq 0) { exit 0 } else { exit 1 }
+'''
 
 STATUS_CMD = (
     "powershell -NoProfile -Command "
@@ -76,12 +134,6 @@ STATUS_CMD = (
     "if ($r.StatusCode -ge 200) { Write-Output 'RUNNING'; exit 0 } "
     "else { Write-Output 'STOPPED'; exit 1 } "
     "} catch { Write-Output 'STOPPED'; exit 1 }\""
-)
-
-DELETE_CLOUDFLARE_FILES_CMD = (
-    rf'cd /d "{REMOTE_DESKTOP_WIN}" && '
-    r'if exist comfyui_cloudflared_output.txt del /f /q comfyui_cloudflared_output.txt & '
-    r'if exist comfyui_cloudflare_link.txt del /f /q comfyui_cloudflare_link.txt'
 )
 
 START_CLOUDFLARED_CMD = r'cloudflared tunnel --url http://127.0.0.1:8188'
@@ -142,6 +194,10 @@ class ComfyRemoteManager:
         self.remote_clipboard = None
         self.comfy_channel = None
         self.cloudflared_channel = None
+        self.pending_cloudflare_url = ""
+        self.pending_cloudflare_detected_at = 0.0
+        self.start_cancel_event = threading.Event()
+        self.stop_in_progress_event = threading.Event()
         self._stop_monitor = False
         self._monitor_thread = None
         self.current_entries = []
@@ -913,6 +969,7 @@ class ComfyRemoteManager:
 
     def disconnect(self):
         self._stop_monitor = True
+        self.start_cancel_event.set()
         self.busy = False
         for terminal in list(self.terminal_sessions):
             self.close_remote_terminal(terminal)
@@ -939,6 +996,8 @@ class ComfyRemoteManager:
         self.thumbnail_generation += 1
         self.thumbnail_cache.clear()
         self.current_link = ""
+        self.pending_cloudflare_url = ""
+        self.pending_cloudflare_detected_at = 0.0
         self.link_var.set("Nessun link disponibile")
         self.conn_label.config(text="Non connesso")
         self.draw_connection_status(False)
@@ -1054,19 +1113,22 @@ class ComfyRemoteManager:
 
     def close_remote_channels(self):
         for attr in ("cloudflared_channel", "comfy_channel"):
-            ch = getattr(self, attr, None)
-            if ch is not None:
-                try:
-                    ch.close()
-                except Exception:
-                    pass
-                setattr(self, attr, None)
+            self.close_remote_channel(attr)
 
-    def start_long_running_command(self, command, title, channel_attr, on_url=False):
+    def close_remote_channel(self, channel_attr):
+        channel = getattr(self, channel_attr, None)
+        if channel is not None:
+            try:
+                channel.close()
+            except Exception:
+                pass
+            setattr(self, channel_attr, None)
+
+    def start_long_running_command(self, command, title, channel_attr, on_url=False, display_command=None):
         if not self.ensure_connected():
             raise RuntimeError("Non connesso a PC1.")
         self.enqueue("output", f"\n=== {title} ===")
-        self.enqueue("output", f"> {command}")
+        self.enqueue("output", f"> {display_command or command}")
         transport = self.client.get_transport()
         if not transport or not transport.is_active():
             raise RuntimeError("Connessione SSH non attiva.")
@@ -1097,15 +1159,29 @@ class ComfyRemoteManager:
                                 continue
                             if on_url:
                                 self.enqueue("output", f"[cloudflared] {clean}")
-                            elif any(key in clean.lower() for key in ("starting server", "to see the gui", "error", "traceback", "failed", "port", "database")):
+                            elif any(
+                                key in clean.lower()
+                                for key in (
+                                    "starting server",
+                                    "to see the gui",
+                                    "error",
+                                    "traceback",
+                                    "failed",
+                                    "port",
+                                    "database",
+                                    "manager",
+                                    "run_nvidia_gpu",
+                                )
+                            ):
                                 self.enqueue("output", f"[ComfyUI] {clean}")
                         if on_url:
                             match = URL_RE.search(buffer)
                             if match:
                                 url = match.group(0)
-                                self.enqueue("link", url)
-                                self.enqueue("output", f"Link Cloudflare generato: {url}")
-                                self.write_remote_link_file(url)
+                                if url != self.pending_cloudflare_url:
+                                    self.pending_cloudflare_url = url
+                                    self.pending_cloudflare_detected_at = time.time()
+                                    self.enqueue("output", f"Link Cloudflare rilevato, verifica in corso: {url}")
                 if chan.exit_status_ready():
                     code = chan.recv_exit_status()
                     self.enqueue("output", f"{title} terminato. Exit code: {code}")
@@ -1157,28 +1233,142 @@ class ComfyRemoteManager:
     # -----------------------------------------------------
     # ACTIONS
     # -----------------------------------------------------
+    def build_start_comfy_command(self):
+        script = rf'''
+$ErrorActionPreference = 'Stop'
+$root = '{REMOTE_COMFY_DIR_WIN}'
+$batch = '{START_COMFY_BATCH_WIN}'
+
+if (-not (Test-Path -LiteralPath $batch -PathType Leaf)) {{
+    Write-Error ('Batch di avvio non trovato: ' + $batch)
+    exit 2
+}}
+
+$batchContent = Get-Content -LiteralPath $batch -Raw
+if ($batchContent -notmatch '--enable-manager' -or
+    $batchContent -notmatch '--enable-manager-legacy-ui') {{
+    Write-Error 'run_nvidia_gpu.bat non contiene entrambe le opzioni Manager richieste.'
+    exit 3
+}}
+
+Set-Location -LiteralPath $root
+Write-Output ('Esecuzione esplicita del batch: ' + $batch)
+& $batch
+if ($null -ne $LASTEXITCODE) {{ exit $LASTEXITCODE }}
+'''
+        return self.powershell_encoded_command(script)
+
+    def remote_cloudflared_count(self):
+        script = "Write-Output @(Get-Process -Name cloudflared -ErrorAction SilentlyContinue).Count"
+        command = self.powershell_encoded_command(script)
+        code, out, _err = self.run_command_quiet(command, timeout=10)
+        if code != 0:
+            raise RuntimeError("Impossibile verificare i processi cloudflared su PC1.")
+        for line in reversed(out.splitlines()):
+            try:
+                return int(line.strip())
+            except ValueError:
+                continue
+        return 0
+
+    def stop_cloudflared_only(self):
+        self.close_remote_channel("cloudflared_channel")
+        self.pending_cloudflare_url = ""
+        self.pending_cloudflare_detected_at = 0.0
+        command = self.powershell_encoded_command(STOP_CLOUDFLARED_ONLY_SCRIPT)
+        code, out, err = self.run_command_quiet(command, timeout=30)
+        if code != 0:
+            self.enqueue("output", "ATTENZIONE: non sono riuscito a chiudere completamente cloudflared.")
+        return code == 0 and "CLOUDFLARED_REMAINING=0" in (out + err)
+
+    def start_verified_cloudflare(self, attempts=3, timeout_per_attempt=120):
+        for attempt in range(1, attempts + 1):
+            if self.start_cancel_event.is_set():
+                return False
+            self.pending_cloudflare_url = ""
+            self.pending_cloudflare_detected_at = 0.0
+            self.enqueue("output", f"Avvio Cloudflare: tentativo {attempt}/{attempts}...")
+            self.start_long_running_command(
+                START_CLOUDFLARED_CMD,
+                "AVVIA CLOUDFLARED",
+                "cloudflared_channel",
+                on_url=True,
+            )
+            if self.wait_for_link_in_memory(timeout_seconds=timeout_per_attempt):
+                return True
+            if self.start_cancel_event.is_set():
+                return False
+            self.enqueue("output", f"Tunnel Cloudflare non raggiungibile al tentativo {attempt}: lo chiudo e riprovo.")
+            self.stop_cloudflared_only()
+            time.sleep(2)
+        return False
+
+    def verify_comfyui_manager(self, timeout_seconds=30):
+        script = rf'''
+$ErrorActionPreference = 'Stop'
+$version = Invoke-RestMethod -Uri 'http://127.0.0.1:{COMFY_PORT}/v2/manager/version' -TimeoutSec 5
+$mode = Invoke-RestMethod -Uri 'http://127.0.0.1:{COMFY_PORT}/v2/manager/is_legacy_manager_ui' -TimeoutSec 5
+Write-Output ('MANAGER_OK|' + $version + '|' + $mode.is_legacy_manager_ui)
+'''
+        command = self.powershell_encoded_command(script)
+        start = time.time()
+        while time.time() - start < timeout_seconds and not self.start_cancel_event.is_set():
+            try:
+                code, out, _err = self.run_command_quiet(command, timeout=10)
+                marker = next(
+                    (line.strip() for line in out.splitlines() if line.strip().startswith("MANAGER_OK|")),
+                    "",
+                )
+                if code == 0 and marker:
+                    _prefix, version, legacy = marker.split("|", 2)
+                    mode = "interfaccia legacy attiva" if legacy.lower() == "true" else "interfaccia moderna"
+                    self.enqueue("output", f"OK: ComfyUI-Manager {version} attivo ({mode}).")
+                    return True
+            except Exception:
+                pass
+            time.sleep(2)
+        if not self.start_cancel_event.is_set():
+            self.enqueue(
+                "output",
+                "ERRORE: ComfyUI è attivo, ma l'API di ComfyUI-Manager non risponde. "
+                "Controlla l'installazione del Manager nel Python embedded.",
+            )
+        return False
+
     def stop_comfyui(self):
         if not self.ensure_connected():
             return
+        self.start_cancel_event.set()
+        self.stop_in_progress_event.set()
+        self.pending_cloudflare_url = ""
+        self.pending_cloudflare_detected_at = 0.0
+        self.enqueue("link", "")
+        self.close_remote_channels()
         self.busy = True
         self.set_status("stopping")
         threading.Thread(target=self._stop_thread, daemon=True).start()
 
     def _stop_thread(self):
         try:
-            self.run_command(STOP_COMFY_CMD, title="SPEGNI COMFYUI", timeout=30)
+            command = self.powershell_encoded_command(STOP_ALL_REMOTE_SCRIPT)
+            code, out, err = self.run_command(command, title="SPEGNI TUTTO", timeout=45)
             self.close_remote_channels()
             time.sleep(1)
             running = self.remote_is_comfy_running()
-            self.enqueue("status", "running" if running else "stopped")
-            if running:
-                self.enqueue("output", "ATTENZIONE: ComfyUI risponde ancora su 8188.")
+            stop_verified = code == 0 and "STOP_ALL_OK" in (out + err) and not running
+            self.enqueue("status", "stopped" if not running else "running")
+            if stop_verified:
+                self.enqueue("output", "OK: ComfyUI, processi batch e tunnel Cloudflare sono tutti spenti.")
             else:
-                self.enqueue("output", "OK: ComfyUI spento.")
+                self.enqueue(
+                    "output",
+                    "ERRORE: spegnimento non verificato. Controlla i PID riportati nella verifica finale.",
+                )
             self.enqueue("link", "")
         except Exception as e:
             self.enqueue("output", f"Errore spegnimento: {e}")
         finally:
+            self.stop_in_progress_event.clear()
             self.enqueue("busy", False)
 
     def update_comfyui(self):
@@ -1194,17 +1384,25 @@ class ComfyRemoteManager:
     def _update_thread(self):
         try:
             self.run_command(UPDATE_COMFY_CMD, title="UPDATE COMFYUI", timeout=20 * 60, stream=True, stop_on_done=True)
+            if self.stop_in_progress_event.is_set():
+                return
             running = self.remote_is_comfy_running()
             self.enqueue("status", "running" if running else "stopped")
         except Exception as e:
-            self.enqueue("output", f"Errore update: {e}")
-            self.enqueue("status", "stopped")
+            if not self.stop_in_progress_event.is_set():
+                self.enqueue("output", f"Errore update: {e}")
+                self.enqueue("status", "stopped")
         finally:
-            self.enqueue("busy", False)
+            if not self.stop_in_progress_event.is_set():
+                self.enqueue("busy", False)
 
     def start_comfyui(self):
         if not self.ensure_connected():
             return
+        self.start_cancel_event.clear()
+        self.stop_in_progress_event.clear()
+        self.pending_cloudflare_url = ""
+        self.pending_cloudflare_detected_at = 0.0
         self.busy = True
         self.set_status("starting")
         self.enqueue("link", "")
@@ -1212,37 +1410,61 @@ class ComfyRemoteManager:
 
     def _start_thread(self):
         try:
-            # Chiudiamo solo cloudflared vecchio. Non usiamo start "" e non stacchiamo ComfyUI:
-            # teniamo il bat vivo in un canale SSH separato, così parte davvero come quando lo lanci a mano.
-            self.run_command(KILL_CLOUDFLARED_CMD, title="CHIUDI CLOUDFLARED PRECEDENTE", timeout=15)
+            cloudflared_count = self.remote_cloudflared_count()
+            if cloudflared_count:
+                self.enqueue(
+                    "output",
+                    f"AVVIO ANNULLATO: rilevati {cloudflared_count} processi cloudflared residui. "
+                    "Usa SPEGNI e attendi la verifica completa prima di riavviare.",
+                )
+                self.enqueue("status", "running" if self.remote_is_comfy_running() else "stopped")
+                return
 
             if self.remote_is_comfy_running():
                 self.enqueue("output", "ComfyUI risulta già attivo. Non lo rilancio.")
                 self.enqueue("status", "running")
             else:
-                self.start_long_running_command(START_COMFY_CMD, "AVVIA COMFYUI", "comfy_channel", on_url=False)
+                command = self.build_start_comfy_command()
+                self.start_long_running_command(
+                    command,
+                    "AVVIA COMFYUI TRAMITE run_nvidia_gpu.bat",
+                    "comfy_channel",
+                    on_url=False,
+                    display_command=START_COMFY_BATCH_WIN,
+                )
                 if not self.wait_for_comfyui(timeout_seconds=15 * 60):
+                    if self.start_cancel_event.is_set():
+                        self.enqueue("output", "Avvio ComfyUI annullato da SPEGNI.")
+                        return
                     self.enqueue("status", "stopped")
                     self.enqueue("output", "ERRORE: ComfyUI non è diventato attivo entro il timeout.")
                     return
                 self.enqueue("status", "running")
 
-            # Avvio cloudflared in un secondo canale SSH persistente e leggo direttamente stdout/stderr.
-            # Questo evita il blocco della GUI e non dipende da redirect su file.
-            self.start_long_running_command(START_CLOUDFLARED_CMD, "AVVIA CLOUDFLARED", "cloudflared_channel", on_url=True)
+            if self.start_cancel_event.is_set():
+                return
 
-            if not self.wait_for_link_in_memory(timeout_seconds=180):
-                self.enqueue("output", "ERRORE: cloudflared non ha generato un link entro il timeout.")
+            self.verify_comfyui_manager(timeout_seconds=30)
+            if self.start_cancel_event.is_set():
+                return
+
+            if not self.start_verified_cloudflare(attempts=3, timeout_per_attempt=120):
+                if not self.start_cancel_event.is_set():
+                    self.enqueue("output", "ERRORE: cloudflared non ha generato un link pubblico funzionante entro il timeout.")
         except Exception as e:
-            self.enqueue("output", f"Errore avvio: {e}")
-            self.enqueue("status", "stopped")
+            if not self.start_cancel_event.is_set():
+                self.enqueue("output", f"Errore avvio: {e}")
+                self.enqueue("status", "stopped")
         finally:
-            self.enqueue("busy", False)
+            if not self.stop_in_progress_event.is_set():
+                self.enqueue("busy", False)
 
     def wait_for_comfyui(self, timeout_seconds=900):
         self.enqueue("output", "Attendo ComfyUI sulla porta 8188...")
         start = time.time()
         while time.time() - start < timeout_seconds:
+            if self.start_cancel_event.is_set():
+                return False
             try:
                 if self.remote_is_comfy_running():
                     self.enqueue("output", "OK: ComfyUI è attivo.")
@@ -1255,16 +1477,48 @@ class ComfyRemoteManager:
         return False
 
     def wait_for_link_in_memory(self, timeout_seconds=180):
-        self.enqueue("output", "Attendo il link trycloudflare...")
+        self.enqueue("output", "Attendo e verifico il link trycloudflare...")
         start = time.time()
         while time.time() - start < timeout_seconds:
-            if self.current_link:
+            if self.start_cancel_event.is_set():
+                return False
+            candidate = self.pending_cloudflare_url
+            dns_settle_time_elapsed = time.time() - self.pending_cloudflare_detected_at >= 8
+            if candidate and dns_settle_time_elapsed and self.cloudflare_url_is_ready(candidate):
+                self.enqueue("link", candidate)
+                self.enqueue("output", f"OK: link Cloudflare raggiungibile: {candidate}")
+                self.write_remote_link_file(candidate)
                 return True
             ch = self.cloudflared_channel
             if ch is not None and ch.exit_status_ready():
-                return bool(self.current_link)
-            time.sleep(1)
-        return bool(self.current_link)
+                return False
+            time.sleep(2)
+        return False
+
+    def cloudflare_url_is_ready(self, url):
+        try:
+            hostname = urllib.parse.urlparse(url).hostname
+            if not hostname:
+                return False
+            query = urllib.parse.urlencode({"name": hostname, "type": "A"})
+            dns_request = urllib.request.Request(
+                f"https://cloudflare-dns.com/dns-query?{query}",
+                headers={"Accept": "application/dns-json", "User-Agent": "ComfyUI-Remote-Manager/1.0"},
+            )
+            with urllib.request.urlopen(dns_request, timeout=8) as dns_response:
+                dns_result = json.loads(dns_response.read().decode("utf-8", errors="replace"))
+            has_address = dns_result.get("Status") == 0 and any(
+                answer.get("type") in (1, 28) for answer in dns_result.get("Answer", [])
+            )
+            if not has_address:
+                return False
+
+            request = urllib.request.Request(url, headers={"User-Agent": "ComfyUI-Remote-Manager/1.0"})
+            with urllib.request.urlopen(request, timeout=8) as response:
+                response.read(1)
+                return 200 <= response.status < 400
+        except (urllib.error.URLError, TimeoutError, OSError):
+            return False
 
     def wait_for_cloudflare_url(self, timeout_seconds=180):
         self.enqueue("output", "Attendo il link trycloudflare dal file remoto...")
@@ -2915,6 +3169,7 @@ class ComfyRemoteManager:
     # -----------------------------------------------------
     def on_close(self):
         self._stop_monitor = True
+        self.start_cancel_event.set()
         for terminal in list(self.terminal_sessions):
             self.close_remote_terminal(terminal)
         try:
