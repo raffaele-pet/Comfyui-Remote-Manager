@@ -201,6 +201,7 @@ class ComfyRemoteManager:
         self._stop_monitor = False
         self._monitor_thread = None
         self.current_entries = []
+        self.in_recycle_bin = False
         self.tree_item_data = {}
         self.icon_selected_index = None
         self.icon_image_items = {}
@@ -441,6 +442,7 @@ class ComfyRemoteManager:
         remote_actions = [
             ("⌂  Home utente", self.open_remote_home),
             ("▣  Desktop", self.open_remote_desktop),
+            ("♻  Cestino", self.open_remote_recycle_bin),
         ]
         for label, command in remote_actions:
             button = self.make_button(sidebar, label, command, "#172235", "#22314a")
@@ -520,6 +522,72 @@ class ComfyRemoteManager:
 
     def open_remote_desktop(self):
         self.open_folder(posixpath.join(self.remote_home_path.rstrip("/"), "Desktop"))
+
+    def open_remote_recycle_bin(self):
+        if not self.connected or not self.client:
+            return
+        self.in_recycle_bin = True
+        threading.Thread(target=self._open_remote_recycle_bin_thread, daemon=True).start()
+
+    def _open_remote_recycle_bin_thread(self):
+        script = r'''
+$shell = New-Object -ComObject Shell.Application
+$recycle = $shell.Namespace(10)
+if ($null -eq $recycle) { throw 'Impossibile accedere al Cestino di Windows.' }
+$result = @(
+    foreach ($item in @($recycle.Items())) {
+        $deletedFrom = [string]$item.ExtendedProperty('System.Recycle.DeletedFrom')
+        $dateDeleted = $item.ExtendedProperty('System.Recycle.DateDeleted')
+        [PSCustomObject]@{
+            name = [string]$item.Name
+            path = [string]$item.Path
+            is_dir = [bool]$item.IsFolder
+            size = [long]$item.Size
+            deleted_from = $deletedFrom
+            date_deleted = if ($dateDeleted) { ([DateTime]$dateDeleted).ToString('yyyy-MM-dd HH:mm:ss') } else { '' }
+        }
+    }
+)
+Write-Output ('RECYCLE_JSON:' + (ConvertTo-Json -InputObject $result -Compress -Depth 3))
+'''
+        try:
+            command = self.powershell_encoded_command(script)
+            code, out, err = self.run_command_quiet(command, timeout=30)
+            if code != 0:
+                raise RuntimeError((err or out).strip() or "Errore durante la lettura del Cestino.")
+            marker = next((line for line in out.splitlines() if line.startswith("RECYCLE_JSON:")), None)
+            if marker is None:
+                raise RuntimeError("PC1 non ha restituito l'elenco del Cestino.")
+            payload = json.loads(marker[len("RECYCLE_JSON:"):])
+            if isinstance(payload, dict):
+                payload = [payload]
+            entries = []
+            for item in payload or []:
+                raw_size = int(item.get("size") or 0)
+                recycle_path_win = str(item.get("path") or "")
+                entries.append(
+                    {
+                        "name": str(item.get("name") or Path(recycle_path_win).name),
+                        "type": "Cartella eliminata" if item.get("is_dir") else "File eliminato",
+                        "size": "" if item.get("is_dir") else self.format_size(raw_size),
+                        "is_dir": bool(item.get("is_dir")),
+                        "raw_size": raw_size,
+                        "mtime": 0,
+                        "path": self.normalize_sftp_path(recycle_path_win),
+                        "recycle_path_win": recycle_path_win,
+                        "deleted_from": str(item.get("deleted_from") or ""),
+                        "date_deleted": str(item.get("date_deleted") or ""),
+                        "recycle_item": True,
+                    }
+                )
+            entries.sort(key=lambda entry: entry["name"].lower())
+            self.enqueue("path", "Cestino")
+            self.enqueue("tree", entries)
+            self.enqueue("output", f"Cestino aperto: {len(entries)} elementi.")
+        except Exception as error:
+            if self.connected:
+                self.enqueue("output", f"Impossibile aprire il Cestino: {error}")
+                self.enqueue("error_dialog", "Errore Cestino", str(error))
 
     def copy_ssh_command(self):
         host = self.host_var.get().strip()
@@ -1573,6 +1641,7 @@ Write-Output ('MANAGER_OK|' + $version + '|' + $mode.is_legacy_manager_ui)
     def open_folder(self, path):
         if not self.connected or not self.sftp:
             return
+        self.in_recycle_bin = False
         path = self.normalize_sftp_path(path)
         threading.Thread(target=self._open_folder_thread, args=(path,), daemon=True).start()
 
@@ -1867,12 +1936,21 @@ Write-Output ('MANAGER_OK|' + $version + '|' + $mode.is_legacy_manager_ui)
         return f"{s}s"
 
     def refresh_folder(self):
-        self.open_folder(self.current_remote_path)
+        if self.in_recycle_bin:
+            self.open_remote_recycle_bin()
+        else:
+            self.open_folder(self.current_remote_path)
 
     def go_to_path(self):
-        self.open_folder(self.path_var.get())
+        if self.path_var.get().strip().lower() == "cestino":
+            self.open_remote_recycle_bin()
+        else:
+            self.open_folder(self.path_var.get())
 
     def go_up(self):
+        if self.in_recycle_bin:
+            self.open_remote_home()
+            return
         path = self.normalize_sftp_path(self.current_remote_path)
         if path.count("/") <= 2:
             return
@@ -1908,6 +1986,9 @@ Write-Output ('MANAGER_OK|' + $version + '|' + $mode.is_legacy_manager_ui)
     def open_or_preview_item(self, item):
         if not item:
             return
+        if item.get("recycle_item"):
+            self.show_recycle_item_properties(item)
+            return
         if item["is_dir"]:
             self.open_folder(item["path"])
         elif self.is_image_file(item["name"]):
@@ -1932,6 +2013,26 @@ Write-Output ('MANAGER_OK|' + $version + '|' + $mode.is_legacy_manager_ui)
         item = self.selected_remote_item()
         menu = self.file_context_menu
         menu.delete(0, "end")
+
+        if self.in_recycle_bin:
+            if item:
+                menu.add_command(label="Ripristina", command=self.restore_selected_recycle_item)
+                menu.add_command(label="Elimina definitivamente", command=self.permanently_delete_recycle_item)
+                menu.add_command(
+                    label="Proprietà",
+                    command=lambda current=item: self.show_recycle_item_properties(current),
+                )
+                menu.add_separator()
+            items_state = "normal" if self.current_entries else "disabled"
+            menu.add_command(label="Ripristina tutto", command=self.restore_all_recycle_items, state=items_state)
+            menu.add_command(label="Svuota cestino", command=self.empty_remote_recycle_bin, state=items_state)
+            menu.add_separator()
+            menu.add_command(label="Aggiorna", command=self.open_remote_recycle_bin)
+            try:
+                menu.tk_popup(x_root, y_root)
+            finally:
+                menu.grab_release()
+            return
 
         if item:
             if item["is_dir"]:
@@ -2012,7 +2113,10 @@ Write-Output ('MANAGER_OK|' + $version + '|' + $mode.is_legacy_manager_ui)
             self.enqueue("output", f"{title}: operazione completata.")
             if clear_clipboard:
                 self.remote_clipboard = None
-            self.open_folder(refresh_path)
+            if refresh_path == "Cestino":
+                self.open_remote_recycle_bin()
+            else:
+                self.open_folder(refresh_path)
         except Exception as e:
             self.enqueue("output", f"{title}: operazione fallita: {e}")
             self.enqueue("error_dialog", f"Errore - {title}", str(e))
@@ -2165,6 +2269,93 @@ Write-Output ('MANAGER_OK|' + $version + '|' + $mode.is_legacy_manager_ui)
             return
         script = f"Remove-Item -LiteralPath {self.ps_literal(self.sftp_to_windows_path(item['path']))} -Recurse -Force"
         self.start_remote_file_operation("Elimina", script)
+
+    def show_recycle_item_properties(self, item):
+        messagebox.showinfo(
+            "Proprietà elemento eliminato",
+            f"Nome: {item['name']}\n"
+            f"Tipo: {item['type']}\n"
+            f"Dimensione: {item.get('size') or '—'}\n"
+            f"Posizione originale: {item.get('deleted_from') or 'Non disponibile'}\n"
+            f"Data eliminazione: {item.get('date_deleted') or 'Non disponibile'}",
+            parent=self.root,
+        )
+
+    def restore_selected_recycle_item(self):
+        item = self.selected_remote_item()
+        if not item or not item.get("recycle_item"):
+            return
+        script = rf'''
+$recyclePath = {self.ps_literal(item['recycle_path_win'])}
+$shell = New-Object -ComObject Shell.Application
+$recycle = $shell.Namespace(10)
+$target = @($recycle.Items()) | Where-Object {{ $_.Path -ieq $recyclePath }} | Select-Object -First 1
+if ($null -eq $target) {{ throw 'Elemento non più presente nel Cestino.' }}
+$target.InvokeVerb('RESTORE')
+Start-Sleep -Milliseconds 800
+if (Test-Path -LiteralPath $recyclePath) {{
+    throw 'Ripristino non completato; potrebbe esistere già un elemento con lo stesso nome.'
+}}
+'''
+        self.start_remote_file_operation("Ripristina dal Cestino", script, refresh_path="Cestino")
+
+    def restore_all_recycle_items(self):
+        if not self.current_entries:
+            return
+        if not messagebox.askyesno(
+            "Ripristina tutto",
+            f"Ripristinare tutti i {len(self.current_entries)} elementi presenti nel Cestino?",
+            parent=self.root,
+        ):
+            return
+        script = r'''
+$shell = New-Object -ComObject Shell.Application
+$recycle = $shell.Namespace(10)
+$items = @($recycle.Items())
+foreach ($item in $items) { $item.InvokeVerb('RESTORE') }
+Start-Sleep -Seconds 1
+Write-Output ('Elementi richiesti per il ripristino: ' + $items.Count)
+'''
+        self.start_remote_file_operation("Ripristina tutto", script, refresh_path="Cestino")
+
+    def permanently_delete_recycle_item(self):
+        item = self.selected_remote_item()
+        if not item or not item.get("recycle_item"):
+            return
+        if not messagebox.askyesno(
+            "Eliminazione definitiva",
+            f"Eliminare definitivamente questo elemento?\n\n{item['name']}\n\n"
+            "L'operazione non può essere annullata.",
+            icon="warning",
+            parent=self.root,
+        ):
+            return
+        script = rf'''
+$recyclePath = {self.ps_literal(item['recycle_path_win'])}
+if (-not (Test-Path -LiteralPath $recyclePath)) {{ throw 'Elemento non più presente nel Cestino.' }}
+$leaf = [System.IO.Path]::GetFileName($recyclePath)
+$parent = [System.IO.Path]::GetDirectoryName($recyclePath)
+Remove-Item -LiteralPath $recyclePath -Recurse -Force
+if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
+    $infoPath = Join-Path $parent ('$I' + $leaf.Substring(2))
+    Remove-Item -LiteralPath $infoPath -Force -ErrorAction SilentlyContinue
+}}
+'''
+        self.start_remote_file_operation("Elimina definitivamente", script, refresh_path="Cestino")
+
+    def empty_remote_recycle_bin(self):
+        if not self.current_entries:
+            return
+        if not messagebox.askyesno(
+            "Svuota cestino",
+            f"Eliminare definitivamente tutti i {len(self.current_entries)} elementi?\n\n"
+            "L'operazione non può essere annullata.",
+            icon="warning",
+            parent=self.root,
+        ):
+            return
+        script = "Clear-RecycleBin -Force -ErrorAction Stop; Write-Output 'Cestino svuotato.'"
+        self.start_remote_file_operation("Svuota Cestino", script, refresh_path="Cestino")
 
     def create_remote_folder(self):
         name = simpledialog.askstring(
