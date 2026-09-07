@@ -5,6 +5,8 @@ Applicazione desktop per Windows che consente di gestire da PC2 un'installazione
 ## Funzioni principali
 
 - connessione SSH a PC1;
+- menu laterale SSH con profilo `pc-lavoro`, porta configurabile e collegamenti alla home remota;
+- memorizzazione opzionale della password protetta tramite la cifratura di Windows;
 - controllo, avvio, arresto e aggiornamento di ComfyUI;
 - avvio di Cloudflare Tunnel e visualizzazione del link pubblico `trycloudflare.com`;
 - browser remoto dei file tramite SFTP;
@@ -14,6 +16,8 @@ Applicazione desktop per Windows che consente di gestire da PC2 un'installazione
 - rinomina, copia, taglia/incolla, spostamento ed eliminazione di file e cartelle;
 - creazione di nuove cartelle;
 - apertura di un terminale remoto nella cartella selezionata;
+- terminale PowerShell SSH persistente, utilizzabile senza Visual Studio Code;
+- apertura e modifica diretta dei file di testo su PC1;
 - visualizzazione dei file con modalità elenco, dettagli, icone e anteprima immagini.
 
 ## Requisiti
@@ -41,6 +45,10 @@ Le impostazioni di PC1 si trovano all'inizio di `comfyui_remote_manager.py`:
 Adatta questi valori se l'indirizzo Tailscale, l'utente o la cartella di ComfyUI sono diversi.
 
 ## Avvio
+
+Su Windows puoi avviare l'app con un doppio clic su `run.bat`.
+
+In alternativa, dal terminale:
 
 ```powershell
 py comfyui_remote_manager.py
