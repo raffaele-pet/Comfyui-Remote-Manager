@@ -35,30 +35,15 @@ except ModuleNotFoundError:
 # =========================================================
 # CONFIGURAZIONE PC1
 # =========================================================
-DEFAULT_HOST = "100.111.231.116"
-DEFAULT_USER = "tesi"
-
-REMOTE_COMFY_DIR_WIN = r"C:\Users\tesi\Desktop\ComfyUI maggio 2026"
-REMOTE_UPDATE_DIR_WIN = r"C:\Users\tesi\Desktop\ComfyUI maggio 2026\update"
-REMOTE_DESKTOP_WIN = r"C:\Users\tesi\Desktop"
-
-REMOTE_COMFY_DIR_SFTP = "/C:/Users/tesi/Desktop/ComfyUI maggio 2026"
-REMOTE_DESKTOP_SFTP = "/C:/Users/tesi/Desktop"
-REMOTE_CLOUDFLARE_OUTPUT_SFTP = "/C:/Users/tesi/Desktop/comfyui_cloudflared_output.txt"
-REMOTE_CLOUDFLARE_LINK_SFTP = "/C:/Users/tesi/Desktop/comfyui_cloudflare_link.txt"
-REMOTE_DOWNLOAD_HELPER_SFTP = "/C:/Users/tesi/Desktop/comfy_remote_download_helper.py"
-REMOTE_DOWNLOAD_CONFIG_SFTP = "/C:/Users/tesi/Desktop/comfy_remote_download_config.json"
-REMOTE_DOWNLOAD_HELPER_WIN = r"C:\Users\tesi\Desktop\comfy_remote_download_helper.py"
+DEFAULT_HOST = ""
+DEFAULT_USER = ""
 
 COMFY_PORT = 8188
 COMFY_LOCAL_URL = "http://127.0.0.1:8188/system_stats"
 
-START_COMFY_BATCH_WIN = rf"{REMOTE_COMFY_DIR_WIN}\run_nvidia_gpu.bat"
-UPDATE_COMFY_CMD = rf'cd /d "{REMOTE_UPDATE_DIR_WIN}" && update_comfyui.bat'
-
 STOP_ALL_REMOTE_SCRIPT = rf'''
 $ErrorActionPreference = 'SilentlyContinue'
-$comfyRoot = '{REMOTE_COMFY_DIR_WIN}'
+$comfyRoot = '__COMFY_ROOT__'
 
 function Get-ComfyTargets {{
     $targets = @()
@@ -72,7 +57,7 @@ function Get-ComfyTargets {{
             ))
         )
     }} | Select-Object -ExpandProperty ProcessId
-    $targets += Get-NetTCPConnection -LocalPort {COMFY_PORT} -State Listen |
+    $targets += Get-NetTCPConnection -LocalPort 8188 -State Listen |
         Select-Object -ExpandProperty OwningProcess
     return @($targets | Where-Object {{ $_ -and $_ -ne $PID }} | Sort-Object -Unique)
 }}
@@ -87,12 +72,9 @@ for ($attempt = 1; $attempt -le 4; $attempt++) {{
     Start-Sleep -Seconds 1
 }}
 
-Remove-Item -LiteralPath '{REMOTE_CLOUDFLARE_OUTPUT_SFTP[1:].replace('/', chr(92))}' -Force -ErrorAction SilentlyContinue
-Remove-Item -LiteralPath '{REMOTE_CLOUDFLARE_LINK_SFTP[1:].replace('/', chr(92))}' -Force -ErrorAction SilentlyContinue
-
 $remainingTargets = @(Get-ComfyTargets)
 $remainingCloudflared = @(Get-Process -Name cloudflared -ErrorAction SilentlyContinue)
-$remainingListeners = @(Get-NetTCPConnection -LocalPort {COMFY_PORT} -State Listen -ErrorAction SilentlyContinue)
+$remainingListeners = @(Get-NetTCPConnection -LocalPort 8188 -State Listen -ErrorAction SilentlyContinue)
 
 Write-Output ('Verifica finale: processi=' + $remainingTargets.Count +
               ', cloudflared=' + $remainingCloudflared.Count +
@@ -135,8 +117,6 @@ STATUS_CMD = (
     "else { Write-Output 'STOPPED'; exit 1 } "
     "} catch { Write-Output 'STOPPED'; exit 1 }\""
 )
-
-START_CLOUDFLARED_CMD = r'cloudflared tunnel --url http://127.0.0.1:8188'
 
 URL_RE = re.compile(r"https://[a-zA-Z0-9.-]+\.trycloudflare\.com")
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
@@ -189,7 +169,7 @@ class ComfyRemoteManager:
         self.connected = False
         self.busy = False
         self.comfy_status = "unknown"  # unknown, stopped, starting, updating, running, stopping
-        self.current_remote_path = REMOTE_COMFY_DIR_SFTP
+        self.current_remote_path = "/"
         self.current_link = ""
         self.remote_clipboard = None
         self.comfy_channel = None
@@ -214,13 +194,19 @@ class ComfyRemoteManager:
         profile = self.load_connection_profile()
         saved_password = self.unprotect_password(profile.get("password", ""))
         default_user = profile.get("user", DEFAULT_USER)
-        self.remote_home_path = f"/C:/Users/{default_user}"
+        self.remote_home_path = f"/C:/Users/{default_user}" if default_user else "/"
+        self.current_remote_path = self.normalize_sftp_path(profile.get("comfy_dir", "")) or "/"
 
         self.ui_queue = queue.Queue()
 
         self.host_var = StringVar(value=profile.get("host", DEFAULT_HOST))
         self.port_var = StringVar(value=str(profile.get("port", 22)))
         self.user_var = StringVar(value=default_user)
+        self.comfy_path_var = StringVar(value=profile.get("comfy_dir", ""))
+        self.comfy_dir = self.comfy_path_var.get().strip().rstrip("\\/")
+        self.start_batch_var = StringVar(value=profile.get("start_batch", "run_nvidia_gpu.bat"))
+        self.start_batch = self.start_batch_var.get().strip()
+        self.cloudflared_exe = profile.get("cloudflared_exe") or "cloudflared"
         self.password_var = StringVar(value=saved_password)
         self.remember_password_var = BooleanVar(value=bool(profile.get("remember_password", False)))
         self.host_summary_var = StringVar(value="")
@@ -246,7 +232,7 @@ class ComfyRemoteManager:
     def load_connection_profile(self):
         try:
             if CONNECTION_PROFILE_PATH.exists():
-                with CONNECTION_PROFILE_PATH.open("r", encoding="utf-8") as profile_file:
+                with CONNECTION_PROFILE_PATH.open("r", encoding="utf-8-sig") as profile_file:
                     data = json.load(profile_file)
                 return data if isinstance(data, dict) else {}
         except Exception:
@@ -318,6 +304,9 @@ class ComfyRemoteManager:
                 "host": host,
                 "port": port,
                 "user": user,
+                "comfy_dir": self.comfy_dir,
+                "start_batch": self.start_batch,
+                "cloudflared_exe": self.cloudflared_exe,
                 "remember_password": remember_password,
                 "password": self.protect_password(password) if remember_password else "",
             }
@@ -327,6 +316,92 @@ class ComfyRemoteManager:
             temporary_path.replace(CONNECTION_PROFILE_PATH)
         except Exception as error:
             self.enqueue("output", f"Profilo SSH non salvato: {error}")
+
+    def import_remote_config(self):
+        if self.connected:
+            messagebox.showwarning("Configurazione", "Disconnetti PC A prima di importare un altro profilo.")
+            return
+        path = filedialog.askopenfilename(title="Configurazione esportata da PC A",
+                                          filetypes=[("JSON", "*.json")], parent=self.root)
+        if not path:
+            return
+        try:
+            with open(path, "r", encoding="utf-8-sig") as config_file:
+                config = json.load(config_file)
+            if config.get("version") != 1:
+                raise ValueError("Versione del file di configurazione non supportata.")
+            host = str(config["host"]).strip()
+            user = str(config["user"]).strip()
+            port = int(config.get("port", 22))
+            comfy_dir = str(config["comfy_dir"]).strip()
+            start_batch = str(config.get("start_batch", "run_nvidia_gpu.bat")).strip()
+            cloudflared_exe = str(config.get("cloudflared_exe", "cloudflared")).strip()
+            if not host or any(ch.isspace() for ch in host) or not user or not 1 <= port <= 65535:
+                raise ValueError("Host, utente o porta non validi.")
+            if not self.valid_comfy_path(comfy_dir):
+                raise ValueError("Il percorso di ComfyUI deve essere una cartella Windows assoluta.")
+            if not self.valid_start_batch(start_batch):
+                raise ValueError("Il batch di avvio deve essere un file .bat nella cartella ComfyUI Portable.")
+            if not cloudflared_exe or '"' in cloudflared_exe or "\n" in cloudflared_exe:
+                raise ValueError("Percorso cloudflared non valido.")
+        except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as error:
+            messagebox.showerror("Configurazione non valida", str(error), parent=self.root)
+            return
+        self.host_var.set(host)
+        self.port_var.set(str(port))
+        self.user_var.set(user)
+        self.comfy_path_var.set(comfy_dir)
+        self.comfy_dir = comfy_dir.rstrip("\\/")
+        self.start_batch_var.set(start_batch)
+        self.start_batch = start_batch
+        self.cloudflared_exe = cloudflared_exe
+        self.password_var.set("")
+        self.remember_password_var.set(False)
+        self.save_connection_profile(host, port, user, "", False)
+        self.append_output("Configurazione di PC A importata. Inserisci la password SSH e connettiti.")
+
+    @staticmethod
+    def valid_comfy_path(path):
+        return bool(re.fullmatch(r"[A-Za-z]:\\[^\r\n]+", path))
+
+    @staticmethod
+    def valid_start_batch(name):
+        return bool(re.fullmatch(r"[^<>:\"/\\|?*\r\n]+\.bat", name, re.IGNORECASE))
+
+    def save_comfy_path(self):
+        path = self.comfy_path_var.get().strip()
+        if not self.valid_comfy_path(path):
+            messagebox.showwarning("Percorso non valido", "Inserisci la cartella Windows assoluta di ComfyUI Portable.")
+            return
+        start_batch = self.start_batch_var.get().strip()
+        if not self.valid_start_batch(start_batch):
+            messagebox.showwarning("Batch non valido", "Inserisci il nome di un file .bat nella cartella ComfyUI Portable.")
+            return
+        self.current_remote_path = self.normalize_sftp_path(path)
+        self.comfy_dir = path.rstrip("\\/")
+        self.start_batch = start_batch
+        try:
+            port = int(self.port_var.get().strip() or "22")
+        except ValueError:
+            port = 22
+        self.save_connection_profile(self.host_var.get().strip(), port,
+                                     self.user_var.get().strip(), self.password_var.get(),
+                                     self.remember_password_var.get())
+        self.append_output(f"ComfyUI configurato: {path} / {start_batch}")
+
+    def comfy_root(self):
+        path = self.comfy_dir
+        if not self.valid_comfy_path(path):
+            raise ValueError("Configura il percorso Windows della cartella ComfyUI Portable su PC A.")
+        return path
+
+    def comfy_subfolder(self, suffix=""):
+        path = self.normalize_sftp_path(self.comfy_root())
+        return posixpath.join(path, suffix) if suffix else path
+
+    @staticmethod
+    def ps_literal(path):
+        return path.replace("'", "''")
 
     # -----------------------------------------------------
     # UI SETUP
@@ -396,7 +471,7 @@ class ComfyRemoteManager:
         self.connection_status_dot = tk.Canvas(card_top, width=12, height=12, bg=PANEL, highlightthickness=0)
         self.connection_status_dot.pack(side="left", padx=(0, 7))
         self.connection_status_dot.create_oval(2, 2, 10, 10, fill="#6b7280", outline="#6b7280")
-        tk.Label(card_top, text="pc-lavoro", bg=PANEL, fg=TEXT,
+        tk.Label(card_top, text="PC remoto", bg=PANEL, fg=TEXT,
                  font=("Segoe UI", 10, "bold")).pack(side="left")
         self.conn_label = tk.Label(host_card, text="Non connesso", bg=PANEL, fg=MUTED,
                                    anchor="w", font=("Segoe UI", 8))
@@ -410,6 +485,8 @@ class ComfyRemoteManager:
         self.sidebar_field(connection_row, "Utente", self.user_var, side="left", width=15)
         self.sidebar_field(connection_row, "Porta", self.port_var, side="left", width=6)
         self.sidebar_field(sidebar, "Password", self.password_var, show="*")
+        self.sidebar_field(sidebar, "Cartella ComfyUI Portable su PC A", self.comfy_path_var)
+        self.sidebar_field(sidebar, "Batch di avvio", self.start_batch_var)
 
         remember = tk.Checkbutton(
             sidebar,
@@ -424,6 +501,13 @@ class ComfyRemoteManager:
             font=("Segoe UI", 8),
         )
         remember.pack(anchor="w", padx=10, pady=(0, 8))
+
+        import_button = self.make_button(sidebar, "Importa configurazione PC A", self.import_remote_config,
+                                         "#303a49", "#3b4658")
+        import_button.pack(fill="x", padx=10, pady=(0, 8))
+        path_button = self.make_button(sidebar, "Salva percorso e batch", self.save_comfy_path,
+                                       "#303a49", "#3b4658")
+        path_button.pack(fill="x", padx=10, pady=(0, 8))
 
         button_row = tk.Frame(sidebar, bg="#0b1220")
         button_row.pack(fill="x", padx=10)
@@ -747,18 +831,19 @@ Write-Output ('RECYCLE_JSON:' + (ConvertTo-Json -InputObject $result -Compress -
         shortcuts = tk.Frame(browser, bg=PANEL)
         shortcuts.pack(fill="x", pady=(0, 5))
         folder_shortcuts = [
-            ("ComfyUI Portable", REMOTE_COMFY_DIR_SFTP),
-            ("ComfyUI", "/C:/Users/tesi/Desktop/ComfyUI maggio 2026/ComfyUI"),
-            ("custom nodes", "/C:/Users/tesi/Desktop/ComfyUI maggio 2026/ComfyUI/custom_nodes"),
-            ("models", "/C:/Users/tesi/Desktop/ComfyUI maggio 2026/ComfyUI/models"),
-            ("diffusion models", "/C:/Users/tesi/Desktop/ComfyUI maggio 2026/ComfyUI/models/diffusion_models"),
-            ("text encoders", "/C:/Users/tesi/Desktop/ComfyUI maggio 2026/ComfyUI/models/text_encoders"),
-            ("vae", "/C:/Users/tesi/Desktop/ComfyUI maggio 2026/ComfyUI/models/vae"),
-            ("loras", "/C:/Users/tesi/Desktop/ComfyUI maggio 2026/ComfyUI/models/loras"),
+            ("ComfyUI Portable", ""),
+            ("ComfyUI", "ComfyUI"),
+            ("custom nodes", "ComfyUI/custom_nodes"),
+            ("models", "ComfyUI/models"),
+            ("diffusion models", "ComfyUI/models/diffusion_models"),
+            ("text encoders", "ComfyUI/models/text_encoders"),
+            ("vae", "ComfyUI/models/vae"),
+            ("loras", "ComfyUI/models/loras"),
         ]
-        for index, (label, path) in enumerate(folder_shortcuts):
+        for index, (label, suffix) in enumerate(folder_shortcuts):
             shortcuts.grid_columnconfigure(index, weight=1)
-            b = self.make_button(shortcuts, label, lambda p=path: self.open_folder(p), "#253044", "#303c52")
+            b = self.make_button(shortcuts, label, lambda p=suffix: self.open_folder(self.comfy_subfolder(p)),
+                                 "#253044", "#303c52")
             b.grid(row=0, column=index, sticky="ew", padx=(0 if index == 0 else 2, 0 if index == 7 else 2))
 
         self.file_view_area = tk.Frame(browser, bg=PANEL)
@@ -986,6 +1071,16 @@ Write-Output ('RECYCLE_JSON:' + (ConvertTo-Json -InputObject $result -Compress -
         except ValueError:
             messagebox.showwarning("Porta non valida", "Inserisci una porta SSH valida (1-65535).")
             return
+        comfy_dir = self.comfy_path_var.get().strip().rstrip("\\/")
+        if not self.valid_comfy_path(comfy_dir):
+            messagebox.showwarning("Percorso ComfyUI", "Inserisci la cartella Windows di ComfyUI Portable su PC A.")
+            return
+        start_batch = self.start_batch_var.get().strip()
+        if not self.valid_start_batch(start_batch):
+            messagebox.showwarning("Batch non valido", "Inserisci un file .bat nella cartella ComfyUI Portable.")
+            return
+        self.comfy_dir = comfy_dir
+        self.start_batch = start_batch
         self.busy = True
         self.update_buttons()
         threading.Thread(
@@ -1081,16 +1176,21 @@ Write-Output ('RECYCLE_JSON:' + (ConvertTo-Json -InputObject $result -Compress -
     def ensure_connected(self):
         return self.connected and self.client is not None
 
-    def run_command(self, command, title=None, timeout=None, stream=False, stop_on_done=False):
+    def run_command(self, command, title=None, timeout=None, stream=False, stop_on_done=False,
+                    input_data=None, display_command=None):
         if not self.ensure_connected():
             raise RuntimeError("Non connesso a PC1.")
 
         if title:
             self.enqueue("output", f"\n=== {title} ===")
-        self.enqueue("output", f"> {command}")
+        self.enqueue("output", f"> {display_command or command}")
 
         stdin, stdout, stderr = self.client.exec_command(command, get_pty=False, timeout=timeout)
         chan = stdout.channel
+        if input_data is not None:
+            stdin.write(input_data)
+            stdin.flush()
+            chan.shutdown_write()
 
         if not stream:
             out = stdout.read().decode("utf-8", errors="replace")
@@ -1302,21 +1402,16 @@ Write-Output ('RECYCLE_JSON:' + (ConvertTo-Json -InputObject $result -Compress -
     # ACTIONS
     # -----------------------------------------------------
     def build_start_comfy_command(self):
+        root = self.ps_literal(self.comfy_root())
+        batch = self.ps_literal(self.comfy_root() + "\\" + self.start_batch)
         script = rf'''
 $ErrorActionPreference = 'Stop'
-$root = '{REMOTE_COMFY_DIR_WIN}'
-$batch = '{START_COMFY_BATCH_WIN}'
+$root = '{root}'
+$batch = '{batch}'
 
 if (-not (Test-Path -LiteralPath $batch -PathType Leaf)) {{
     Write-Error ('Batch di avvio non trovato: ' + $batch)
     exit 2
-}}
-
-$batchContent = Get-Content -LiteralPath $batch -Raw
-if ($batchContent -notmatch '--enable-manager' -or
-    $batchContent -notmatch '--enable-manager-legacy-ui') {{
-    Write-Error 'run_nvidia_gpu.bat non contiene entrambe le opzioni Manager richieste.'
-    exit 3
 }}
 
 Set-Location -LiteralPath $root
@@ -1356,11 +1451,16 @@ if ($null -ne $LASTEXITCODE) {{ exit $LASTEXITCODE }}
             self.pending_cloudflare_url = ""
             self.pending_cloudflare_detected_at = 0.0
             self.enqueue("output", f"Avvio Cloudflare: tentativo {attempt}/{attempts}...")
+            exe = self.ps_literal(self.cloudflared_exe)
+            command = self.powershell_encoded_command(
+                f"$exe = '{exe}'; & $exe tunnel --url http://127.0.0.1:8188"
+            )
             self.start_long_running_command(
-                START_CLOUDFLARED_CMD,
+                command,
                 "AVVIA CLOUDFLARED",
                 "cloudflared_channel",
                 on_url=True,
+                display_command=f"{self.cloudflared_exe} tunnel --url http://127.0.0.1:8188",
             )
             if self.wait_for_link_in_memory(timeout_seconds=timeout_per_attempt):
                 return True
@@ -1369,38 +1469,6 @@ if ($null -ne $LASTEXITCODE) {{ exit $LASTEXITCODE }}
             self.enqueue("output", f"Tunnel Cloudflare non raggiungibile al tentativo {attempt}: lo chiudo e riprovo.")
             self.stop_cloudflared_only()
             time.sleep(2)
-        return False
-
-    def verify_comfyui_manager(self, timeout_seconds=30):
-        script = rf'''
-$ErrorActionPreference = 'Stop'
-$version = Invoke-RestMethod -Uri 'http://127.0.0.1:{COMFY_PORT}/v2/manager/version' -TimeoutSec 5
-$mode = Invoke-RestMethod -Uri 'http://127.0.0.1:{COMFY_PORT}/v2/manager/is_legacy_manager_ui' -TimeoutSec 5
-Write-Output ('MANAGER_OK|' + $version + '|' + $mode.is_legacy_manager_ui)
-'''
-        command = self.powershell_encoded_command(script)
-        start = time.time()
-        while time.time() - start < timeout_seconds and not self.start_cancel_event.is_set():
-            try:
-                code, out, _err = self.run_command_quiet(command, timeout=10)
-                marker = next(
-                    (line.strip() for line in out.splitlines() if line.strip().startswith("MANAGER_OK|")),
-                    "",
-                )
-                if code == 0 and marker:
-                    _prefix, version, legacy = marker.split("|", 2)
-                    mode = "interfaccia legacy attiva" if legacy.lower() == "true" else "interfaccia moderna"
-                    self.enqueue("output", f"OK: ComfyUI-Manager {version} attivo ({mode}).")
-                    return True
-            except Exception:
-                pass
-            time.sleep(2)
-        if not self.start_cancel_event.is_set():
-            self.enqueue(
-                "output",
-                "ERRORE: ComfyUI è attivo, ma l'API di ComfyUI-Manager non risponde. "
-                "Controlla l'installazione del Manager nel Python embedded.",
-            )
         return False
 
     def stop_comfyui(self):
@@ -1418,7 +1486,8 @@ Write-Output ('MANAGER_OK|' + $version + '|' + $mode.is_legacy_manager_ui)
 
     def _stop_thread(self):
         try:
-            command = self.powershell_encoded_command(STOP_ALL_REMOTE_SCRIPT)
+            script = STOP_ALL_REMOTE_SCRIPT.replace("__COMFY_ROOT__", self.ps_literal(self.comfy_root()))
+            command = self.powershell_encoded_command(script)
             code, out, err = self.run_command(command, title="SPEGNI TUTTO", timeout=45)
             self.close_remote_channels()
             time.sleep(1)
@@ -1451,7 +1520,10 @@ Write-Output ('MANAGER_OK|' + $version + '|' + $mode.is_legacy_manager_ui)
 
     def _update_thread(self):
         try:
-            self.run_command(UPDATE_COMFY_CMD, title="UPDATE COMFYUI", timeout=20 * 60, stream=True, stop_on_done=True)
+            batch = self.ps_literal(self.comfy_root() + r"\update\update_comfyui.bat")
+            script = f"$batch = '{batch}'; if (-not (Test-Path -LiteralPath $batch -PathType Leaf)) {{ throw 'Update ComfyUI non trovato' }}; Set-Location -LiteralPath (Split-Path $batch); & $batch"
+            self.run_command(self.powershell_encoded_command(script), title="UPDATE COMFYUI",
+                             timeout=20 * 60, stream=True, stop_on_done=True)
             if self.stop_in_progress_event.is_set():
                 return
             running = self.remote_is_comfy_running()
@@ -1495,10 +1567,10 @@ Write-Output ('MANAGER_OK|' + $version + '|' + $mode.is_legacy_manager_ui)
                 command = self.build_start_comfy_command()
                 self.start_long_running_command(
                     command,
-                    "AVVIA COMFYUI TRAMITE run_nvidia_gpu.bat",
+                    "AVVIA COMFYUI",
                     "comfy_channel",
                     on_url=False,
-                    display_command=START_COMFY_BATCH_WIN,
+                    display_command=self.comfy_root() + "\\" + self.start_batch,
                 )
                 if not self.wait_for_comfyui(timeout_seconds=15 * 60):
                     if self.start_cancel_event.is_set():
@@ -1509,10 +1581,6 @@ Write-Output ('MANAGER_OK|' + $version + '|' + $mode.is_legacy_manager_ui)
                     return
                 self.enqueue("status", "running")
 
-            if self.start_cancel_event.is_set():
-                return
-
-            self.verify_comfyui_manager(timeout_seconds=30)
             if self.start_cancel_event.is_set():
                 return
 
@@ -1555,7 +1623,6 @@ Write-Output ('MANAGER_OK|' + $version + '|' + $mode.is_legacy_manager_ui)
             if candidate and dns_settle_time_elapsed and self.cloudflare_url_is_ready(candidate):
                 self.enqueue("link", candidate)
                 self.enqueue("output", f"OK: link Cloudflare raggiungibile: {candidate}")
-                self.write_remote_link_file(candidate)
                 return True
             ch = self.cloudflared_channel
             if ch is not None and ch.exit_status_ready():
@@ -1587,45 +1654,6 @@ Write-Output ('MANAGER_OK|' + $version + '|' + $mode.is_legacy_manager_ui)
                 return 200 <= response.status < 400
         except (urllib.error.URLError, TimeoutError, OSError):
             return False
-
-    def wait_for_cloudflare_url(self, timeout_seconds=180):
-        self.enqueue("output", "Attendo il link trycloudflare dal file remoto...")
-        start = time.time()
-        last_size = -1
-        while time.time() - start < timeout_seconds:
-            try:
-                text = self.read_remote_text_file(REMOTE_CLOUDFLARE_OUTPUT_SFTP)
-                match = URL_RE.search(text or "")
-                if match:
-                    return match.group(0)
-                # Mostriamo solo se il file cresce, senza invadere l'output.
-                if text and len(text) != last_size:
-                    last_size = len(text)
-                    tail = "\n".join(text.splitlines()[-6:])
-                    if tail.strip():
-                        self.enqueue("output", "[cloudflared output]\n" + tail)
-            except FileNotFoundError:
-                pass
-            except IOError:
-                pass
-            time.sleep(2)
-        return None
-
-    def read_remote_text_file(self, sftp_path):
-        if not self.sftp:
-            return ""
-        with self.sftp.open(sftp_path, "r") as f:
-            data = f.read()
-        if isinstance(data, bytes):
-            return data.decode("utf-8", errors="replace")
-        return data
-
-    def write_remote_link_file(self, url):
-        try:
-            with self.sftp.open(REMOTE_CLOUDFLARE_LINK_SFTP, "w") as f:
-                f.write(url)
-        except Exception as e:
-            self.enqueue("output", f"Non riesco a scrivere il file link remoto: {e}")
 
     # -----------------------------------------------------
     # FILE BROWSER
@@ -2920,11 +2948,6 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
             path = path[1:]
         return path.replace("/", "\\")
 
-    def ensure_remote_download_helper(self):
-        helper_code = 'import json\nimport os\nimport re\nimport sys\nimport time\nimport urllib.parse\nimport urllib.request\nfrom pathlib import Path\nfrom email.message import Message\n\nCONFIG_PATH = r"C:\\Users\\tesi\\Desktop\\comfy_remote_download_config.json"\nCHUNK_SIZE = 8 * 1024 * 1024\n\n\ndef fmt_size(num):\n    num = float(num)\n    for unit in ["B", "KB", "MB", "GB", "TB"]:\n        if num < 1024:\n            if unit == "B":\n                return f"{num:.0f} {unit}"\n            return f"{num:.2f} {unit}"\n        num /= 1024\n    return f"{num:.2f} PB"\n\n\ndef fmt_time(seconds):\n    seconds = max(int(seconds), 0)\n    h, rem = divmod(seconds, 3600)\n    m, s = divmod(rem, 60)\n    if h:\n        return f"{h}h {m}m"\n    if m:\n        return f"{m}m {s}s"\n    return f"{s}s"\n\n\ndef sanitize_filename(name):\n    name = urllib.parse.unquote(name or "").strip().strip(\'"\')\n    name = re.sub(r\'[<>:"/\\\\|?*]+\', "_", name)\n    name = name.rstrip(" .")\n    return name or "downloaded_model"\n\n\ndef filename_from_content_disposition(value):\n    if not value:\n        return None\n    msg = Message()\n    msg["content-disposition"] = value\n    params = msg.get_params(header="content-disposition", failobj=[])\n    for key, val in params:\n        if key.lower() == "filename*":\n            try:\n                parts = str(val).split("\'", 2)\n                if len(parts) == 3:\n                    return urllib.parse.unquote(parts[2])\n            except Exception:\n                pass\n        if key.lower() == "filename":\n            return val\n    return None\n\n\ndef filename_from_url(url):\n    parsed = urllib.parse.urlparse(url)\n    name = os.path.basename(parsed.path)\n    return name or None\n\n\ndef main():\n    with open(CONFIG_PATH, "r", encoding="utf-8") as f:\n        cfg = json.load(f)\n\n    url = cfg["url"].strip()\n    dest_dir = Path(cfg["dest_dir"])\n    forced_filename = (cfg.get("filename") or "").strip()\n    token = (cfg.get("token") or "").strip()\n\n    dest_dir.mkdir(parents=True, exist_ok=True)\n\n    headers = {"User-Agent": "Mozilla/5.0 comfy-remote-downloader"}\n    if token:\n        headers["Authorization"] = f"Bearer {token}"\n\n    request = urllib.request.Request(url, headers=headers)\n    response = urllib.request.urlopen(request, timeout=60)\n\n    cd_name = filename_from_content_disposition(response.headers.get("Content-Disposition"))\n    url_name = filename_from_url(response.geturl()) or filename_from_url(url)\n    filename = sanitize_filename(forced_filename or cd_name or url_name or "downloaded_model")\n    dest_path = dest_dir / filename\n\n    content_length = response.headers.get("Content-Length")\n    total_size = int(content_length) if content_length and content_length.isdigit() else 0\n    response.close()\n\n    existing_size = dest_path.stat().st_size if dest_path.exists() else 0\n    resume = existing_size > 0 and total_size > 0 and existing_size < total_size\n\n    headers2 = dict(headers)\n    if resume:\n        headers2["Range"] = f"bytes={existing_size}-"\n        print(f"Riprendo download da {fmt_size(existing_size)}", flush=True)\n    elif dest_path.exists() and total_size and existing_size >= total_size:\n        print(f"File già presente e completo: {dest_path}", flush=True)\n        print("REMOTE_DOWNLOAD_DONE", flush=True)\n        return\n    elif dest_path.exists():\n        print("File esistente: sovrascrivo da zero.", flush=True)\n        existing_size = 0\n\n    print(f"Destinazione: {dest_path}", flush=True)\n    print(f"URL finale: {url}", flush=True)\n    if total_size:\n        print(f"Dimensione stimata: {fmt_size(total_size)}", flush=True)\n    else:\n        print("Dimensione non dichiarata dal server.", flush=True)\n\n    request2 = urllib.request.Request(url, headers=headers2)\n    response2 = urllib.request.urlopen(request2, timeout=60)\n\n    status = getattr(response2, "status", None)\n    if resume and status != 206:\n        print("Il server non supporta resume per questo link: riparto da zero.", flush=True)\n        existing_size = 0\n        mode = "wb"\n    else:\n        mode = "ab" if resume else "wb"\n\n    if not total_size:\n        length2 = response2.headers.get("Content-Length")\n        if length2 and length2.isdigit():\n            total_size = int(length2) + existing_size\n\n    downloaded = existing_size\n    start = time.time()\n    last_report = 0\n    last_percent_int = -1\n\n    with open(dest_path, mode) as out:\n        while True:\n            chunk = response2.read(CHUNK_SIZE)\n            if not chunk:\n                break\n            out.write(chunk)\n            downloaded += len(chunk)\n\n            now = time.time()\n            percent = (downloaded / total_size * 100.0) if total_size else 0.0\n            percent_int = int(percent) if total_size else -1\n\n            if now - last_report >= 2.0 or percent_int != last_percent_int:\n                elapsed = max(now - start, 0.1)\n                speed = max((downloaded - existing_size) / elapsed, 1)\n                if total_size:\n                    remaining = max(total_size - downloaded, 0)\n                    eta = fmt_time(remaining / speed)\n                    print(f"DOWNLOAD_PROGRESS {percent:.1f}%  {fmt_size(downloaded)} / {fmt_size(total_size)}  {fmt_size(speed)}/s  ETA {eta}", flush=True)\n                else:\n                    print(f"DOWNLOAD_PROGRESS {fmt_size(downloaded)}  {fmt_size(speed)}/s", flush=True)\n                last_report = now\n                last_percent_int = percent_int\n\n    response2.close()\n    print(f"Download completato: {dest_path}", flush=True)\n    print("REMOTE_DOWNLOAD_DONE", flush=True)\n\n\nif __name__ == "__main__":\n    try:\n        main()\n    except Exception as e:\n        print(f"REMOTE_DOWNLOAD_ERROR: {e}", flush=True)\n        sys.exit(1)\n'
-        with self.sftp.open(REMOTE_DOWNLOAD_HELPER_SFTP, "w") as f:
-            f.write(helper_code)
-
     def download_url_here(self):
         if not self.connected or not self.sftp:
             return
@@ -2964,21 +2987,22 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
 
     def _download_url_thread(self, url, dest_dir_win, filename, token):
         try:
-            self.enqueue("output", f"Download diretto su PC1:\n{url}\n→ {dest_dir_win}")
+            self.enqueue("output", f"Download diretto su PC A in {dest_dir_win}")
             self.enqueue("upload_progress", 0.0, "Download remoto: preparazione...")
-            self.ensure_remote_download_helper()
-
             cfg = {
                 "url": url,
                 "dest_dir": dest_dir_win,
                 "filename": filename,
                 "token": token,
             }
-            with self.sftp.open(REMOTE_DOWNLOAD_CONFIG_SFTP, "w") as f:
-                f.write(json.dumps(cfg, ensure_ascii=False, indent=2))
-
-            command = f'py "{REMOTE_DOWNLOAD_HELPER_WIN}"'
-            code, out, err = self.run_command(command, title="DOWNLOAD DIRETTO SU PC1", stream=True, timeout=None)
+            worker = Path(__file__).with_name("download_worker.py").read_text(encoding="utf-8")
+            payload = worker + "\nmain(json.loads(" + repr(json.dumps(cfg, ensure_ascii=False)) + "))\n"
+            python_exe = self.ps_literal(self.comfy_root() + r"\python_embeded\python.exe")
+            script = f"$python = '{python_exe}'; & $python -u -c 'import sys;exec(sys.stdin.read())'"
+            command = self.powershell_encoded_command(script)
+            code, out, err = self.run_command(command, title="DOWNLOAD DIRETTO SU PC A",
+                                              stream=True, timeout=None, input_data=payload,
+                                              display_command="Python integrato di ComfyUI: download in memoria")
 
             if code == 0:
                 self.enqueue("upload_progress", 100.0, "Download remoto completato")
