@@ -1,8 +1,5 @@
 __pycache__/
-*.py[cod]
-*.pyo
+build/
+*.spec
 .venv/
-venv/
-.env
-.vscode/
-*.log
+assets/ai-icons8.png

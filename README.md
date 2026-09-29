@@ -6,34 +6,22 @@ Applicazione Windows per gestire ComfyUI Portable su **PC A** da **PC B**. PC B 
 
 PC A deve avere ComfyUI Portable per Windows, con un batch `run*.bat` e `python_embeded\python.exe` nella cartella principale.
 
-1. Scarica il repository o almeno `install-pc-a.ps1` su PC A.
-2. Apri **PowerShell come amministratore** ed esegui:
-
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File .\install-pc-a.ps1
-   ```
-
-3. Inserisci il percorso della cartella di ComfyUI Portable, scegli il batch di avvio e indica l'utente Windows che userai per SSH. Lo script installa e abilita OpenSSH Server, Tailscale e `cloudflared` se mancanti.
-4. Accedi a Tailscale dal browser e torna allo script per la verifica dell'indirizzo Tailscale. Lo script prova ad abilitare **Run Unattended** per rendere PC A raggiungibile anche senza una sessione Windows aperta; se non riesce, abilitalo nelle preferenze Tailscale.
-5. Copia su PC B il file `comfyui-remote-config.json` generato sul Desktop. Contiene indirizzo, utente e percorsi; **non contiene password**.
+1. Scarica `install-pc-a.exe` su PC A e aprilo con un doppio clic. Windows chiederà l'autorizzazione amministratore.
+2. Nella finestra scegli la cartella di ComfyUI Portable, il batch di avvio e l'utente Windows per SSH. Premi **Installa componenti** e segui l'avanzamento mostrato nella finestra. Verranno preparati OpenSSH Server, Tailscale e `cloudflared`.
+3. Premi **Apri Tailscale**, completa l'accesso nel browser e poi **Verifica accesso**. Usa la stessa tailnet su entrambi i PC. L'installer prova ad abilitare **Run Unattended**; se non riesce, abilitalo dalle preferenze Tailscale.
+4. La schermata Cloudflare spiega che il Quick Tunnel usato dall'app non richiede un account Cloudflare. Premi **Verifica cloudflared**.
+5. Premi **Salva comfyui-remote-config.json**, scegli dove salvarlo e copialo su PC B. Il file non contiene password.
 
 L'account Windows di PC A deve avere una password utilizzabile via SSH; il PIN di Windows Hello non la sostituisce. Per il Quick Tunnel non serve un account Cloudflare: l'app avvia `cloudflared` soltanto quando premi **Avvia**.
 
 ## Installazione su PC B
 
-Apri PowerShell su PC B e lancia `install-pc-b.ps1` dalla cartella del repository:
+1. Scarica `install-pc-b.exe` su PC B e aprilo con un doppio clic. La finestra mostra l'avanzamento. L'installer include il codice dell'app: non serve clonare il repository.
+2. L'installer prepara Tailscale, Python, le dipendenze dell'app, `run.bat` e un collegamento nel menu Start con l'[icona richiesta di Icons8](https://icons8.it/icon/rJGwKUDZzg4L/ai).
+3. Premi **Apri Tailscale**, accedi alla stessa tailnet di PC A e poi **Verifica accesso**.
+4. Scegli **Importa configurazione**, **Inserisci a mano** oppure **Apri il programma** e compila i dati lì. Inserisci la password SSH nell'app.
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\install-pc-b.ps1
-```
-
-Lo script installa Tailscale e Python se mancanti, copia l'app in `%LOCALAPPDATA%\Programs\ComfyUIRemoteManager`, crea un ambiente Python con le dipendenze e aggiunge un collegamento nel menu Start. Se hai soltanto lo script, prova a clonare il repository: GitHub potrebbe chiederti di autenticarti nel browser.
-
-Accedi a Tailscale con la **stessa tailnet** usata su PC A. Dopo l'installazione, apri l'app dal menu Start e premi **Importa configurazione PC A**, oppure compila a mano host/IP Tailscale, porta SSH, utente e cartella ComfyUI Portable. Inserisci la password SSH nell'app. Puoi anche fornire il file allo script:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\install-pc-b.ps1 -ConfigPath 'D:\comfyui-remote-config.json'
-```
+Nessun passaggio richiede di aprire PowerShell. Gli installer sono eseguibili per Windows x64; serve una connessione Internet per scaricare i componenti tramite WinGet e le dipendenze Python. I sorgenti Tkinter sono `install_pc_a.py`, `install_pc_b.py` e `installer_common.py`.
 
 ## Se sposti o rinomini ComfyUI
 
@@ -50,3 +38,5 @@ Il profilo della connessione è salvato solo su PC B in `%LOCALAPPDATA%\ComfyUIR
 - Terminale PowerShell SSH persistente e modifica di file di testo remoti.
 
 Il link `trycloudflare.com` è pubblico e temporaneo. [Cloudflare indica i Quick Tunnel per test e sviluppo](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/); non usarlo per dati che richiedono accesso privato.
+
+Icona del collegamento: [Icons8](https://icons8.it/icon/rJGwKUDZzg4L/ai). Per ricostruire i due eseguibili su Windows, installa PyInstaller e lancia `py build_installers.py`.
