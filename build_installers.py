@@ -15,7 +15,8 @@ base = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--onefil
 subprocess.run(base + ["--uac-admin", "--name", "install-server",
                        str(root / "install_server.py")], check=True)
 
-payload = ["comfyui_remote_manager.py", "download_worker.py", "requirements.txt", "run.bat"]
+payload = ["comfyui_remote_manager.py", "download_worker.py", "localization.py",
+           "requirements.txt", "run.bat"]
 args = []
 for name in payload:
     args.extend(["--add-data", f"{root / name}:payload"])

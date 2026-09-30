@@ -19,6 +19,8 @@ from tkinter import Tk, StringVar, BooleanVar, filedialog, messagebox, simpledia
 import tkinter as tk
 from tkinter import ttk
 
+from localization import set_active_language, translate, wrap_dialogs
+
 try:
     from PIL import Image, ImageOps, ImageTk
 except ModuleNotFoundError:
@@ -132,6 +134,21 @@ ANSI_ESCAPE_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
 APP_DATA_DIR = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "ComfyUIRemoteManager"
 CONNECTION_PROFILE_PATH = APP_DATA_DIR / "connection.json"
+LANGUAGE_PREFERENCES_PATH = APP_DATA_DIR / "preferences.json"
+
+
+class LocalizedStringVar(StringVar):
+    def __init__(self, master, value, translator):
+        self.source_text = str(value)
+        self.translator = translator
+        super().__init__(master=master, value=self.translator(self.source_text))
+
+    def set(self, value):
+        self.source_text = str(value)
+        super().set(self.translator(self.source_text))
+
+    def refresh(self):
+        super().set(self.translator(self.source_text))
 
 
 # =========================================================
@@ -159,6 +176,9 @@ DISABLED_FG = "#708096"
 class ComfyRemoteManager:
     def __init__(self, root: Tk):
         self.root = root
+        self.language = self.load_language()
+        set_active_language(self.language)
+        wrap_dialogs()
         self.root.title("ComfyUI Remote Manager")
         self.root.geometry("1480x820")
         self.root.minsize(1180, 720)
@@ -192,6 +212,11 @@ class ComfyRemoteManager:
         self.terminal_sessions = []
 
         profile = self.load_connection_profile()
+        self._saved_comfy_config = (
+            str(profile.get("comfy_dir", "")).strip().rstrip("\\/"),
+            str(profile.get("start_batch", "")).strip(),
+        ) if self.valid_comfy_path(str(profile.get("comfy_dir", "")).strip()) and self.valid_start_batch(str(profile.get("start_batch", "")).strip()) else None
+        self._imported_config_pending = False
         saved_password = self.unprotect_password(profile.get("password", ""))
         default_user = profile.get("user", DEFAULT_USER)
         self.remote_home_path = f"/C:/Users/{default_user}" if default_user else "/"
@@ -209,16 +234,20 @@ class ComfyRemoteManager:
         self.cloudflared_exe = profile.get("cloudflared_exe") or "cloudflared"
         self.password_var = StringVar(value=saved_password)
         self.remember_password_var = BooleanVar(value=bool(profile.get("remember_password", False)))
+        self.language_choice = StringVar(value="Italiano" if self.language == "it" else "English")
         self.host_summary_var = StringVar(value="")
-        self.status_text_var = StringVar(value="ComfyUI: non connesso")
-        self.link_var = StringVar(value="Nessun link disponibile")
+        self.status_text_var = LocalizedStringVar(root, "ComfyUI: non connesso", self.t)
+        self.link_var = LocalizedStringVar(root, "Nessun link disponibile", self.t)
         self.path_var = StringVar(value=self.current_remote_path)
         self.view_mode_var = StringVar(value="Dettagli")
-        self.upload_progress_var = StringVar(value="Nessun trasferimento in corso")
+        self.upload_progress_var = LocalizedStringVar(root, "Nessun trasferimento in corso", self.t)
+        self._localized_vars = [self.status_text_var, self.link_var, self.upload_progress_var]
         self.upload_progress_value = tk.DoubleVar(value=0.0)
 
         self.setup_styles()
         self.build_ui()
+        self.apply_language()
+        self.root.after(500, self.localize_new_widgets)
         for variable in (self.host_var, self.port_var, self.user_var):
             variable.trace_add("write", lambda *_args: self.refresh_host_summary())
         self.refresh_host_summary()
@@ -314,8 +343,11 @@ class ComfyRemoteManager:
             with temporary_path.open("w", encoding="utf-8") as profile_file:
                 json.dump(profile, profile_file, indent=2)
             temporary_path.replace(CONNECTION_PROFILE_PATH)
+            self._saved_comfy_config = (self.comfy_dir, self.start_batch)
+            return True
         except Exception as error:
             self.enqueue("output", f"Profilo SSH non salvato: {error}")
+            return False
 
     def import_remote_config(self):
         if self.connected:
@@ -357,8 +389,95 @@ class ComfyRemoteManager:
         self.cloudflared_exe = cloudflared_exe
         self.password_var.set("")
         self.remember_password_var.set(False)
-        self.save_connection_profile(host, port, user, "", False)
+        self._imported_config_pending = True
+        self.update_buttons()
         self.append_output("Configurazione di Pc Server importata. Inserisci la password SSH e connettiti.")
+
+    def t(self, text):
+        return translate(text, self.language)
+
+    @staticmethod
+    def load_language():
+        try:
+            data = json.loads(LANGUAGE_PREFERENCES_PATH.read_text(encoding="utf-8"))
+            if isinstance(data, dict) and data.get("language") in ("en", "it"):
+                return data["language"]
+        except (OSError, ValueError, TypeError):
+            pass
+        return "en"
+
+    def change_language(self, _event=None):
+        self.language = "it" if self.language_choice.get() == "Italiano" else "en"
+        set_active_language(self.language)
+        try:
+            APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
+            temporary = LANGUAGE_PREFERENCES_PATH.with_suffix(".tmp")
+            temporary.write_text(json.dumps({"language": self.language}) + "\n", encoding="utf-8")
+            temporary.replace(LANGUAGE_PREFERENCES_PATH)
+        except OSError as error:
+            messagebox.showerror("Errore", str(error), parent=self.root)
+        self.apply_language()
+
+    def localize_new_widgets(self):
+        if self.root.winfo_exists():
+            self.apply_language()
+            self.root.after(500, self.localize_new_widgets)
+
+    def apply_language(self):
+        for variable in self._localized_vars:
+            variable.refresh()
+
+        def update(widget):
+            try:
+                options = widget.keys()
+                if "text" in options and ("textvariable" not in options or not widget.cget("textvariable")):
+                    current = str(widget.cget("text"))
+                    if current != getattr(widget, "_translated_text", None):
+                        widget._source_text = current
+                    source = getattr(widget, "_source_text", current)
+                    rendered = source if re.match(r"^(?:[A-Za-z]:\\|/[A-Za-z]:/|/)", source) else self.t(source)
+                    if rendered != current:
+                        widget.configure(text=rendered)
+                    widget._translated_text = rendered
+            except tk.TclError:
+                pass
+            if isinstance(widget, tk.Menu):
+                entries = getattr(widget, "_translated_entries", {})
+                for index in range((widget.index("end") or 0) + 1):
+                    try:
+                        current = widget.entrycget(index, "label")
+                        source, previous = entries.get(index, (current, None))
+                        if current != previous:
+                            source = current
+                        rendered = self.t(source)
+                        if current != rendered:
+                            widget.entryconfigure(index, label=rendered)
+                        entries[index] = (source, rendered)
+                    except tk.TclError:
+                        pass
+                widget._translated_entries = entries
+            if isinstance(widget, ttk.Treeview):
+                for column in widget["columns"]:
+                    current = widget.heading(column, "text")
+                    sources = getattr(widget, "_heading_sources", {})
+                    source = sources.get(column, current)
+                    rendered = self.t(source)
+                    if current != rendered:
+                        widget.heading(column, text=rendered)
+                    sources[column] = source
+                    widget._heading_sources = sources
+            if isinstance(widget, (tk.Tk, tk.Toplevel)):
+                current = widget.title()
+                if current != getattr(widget, "_translated_title", None):
+                    widget._source_title = current
+                rendered = self.t(getattr(widget, "_source_title", current))
+                if current != rendered:
+                    widget.title(rendered)
+                widget._translated_title = rendered
+            for child in widget.winfo_children():
+                update(child)
+
+        update(self.root)
 
     @staticmethod
     def valid_comfy_path(path):
@@ -384,10 +503,13 @@ class ComfyRemoteManager:
             port = int(self.port_var.get().strip() or "22")
         except ValueError:
             port = 22
-        self.save_connection_profile(self.host_var.get().strip(), port,
-                                     self.user_var.get().strip(), self.password_var.get(),
-                                     self.remember_password_var.get())
-        self.append_output(f"ComfyUI configurato: {path} / {start_batch}")
+        if self.save_connection_profile(self.host_var.get().strip(), port,
+                                        self.user_var.get().strip(), self.password_var.get(),
+                                        self.remember_password_var.get()):
+            self._saved_comfy_config = (self.comfy_dir, self.start_batch)
+            self._imported_config_pending = False
+            self.update_buttons()
+            self.append_output(f"ComfyUI configurato: {path} / {start_batch}")
 
     def comfy_root(self):
         path = self.comfy_dir
@@ -474,6 +596,13 @@ class ComfyRemoteManager:
         self.sidebar_field(sidebar, "Cartella ComfyUI Portable su Pc Server", self.comfy_path_var)
         self.sidebar_field(sidebar, "Batch di avvio", self.start_batch_var)
 
+        tk.Label(sidebar, text="Lingua", bg="#0b1220", fg=MUTED, anchor="w",
+                 font=("Segoe UI", 8)).pack(fill="x", padx=10)
+        language_select = ttk.Combobox(sidebar, textvariable=self.language_choice,
+                                       values=("English", "Italiano"), state="readonly")
+        language_select.pack(fill="x", padx=10, pady=(0, 8))
+        language_select.bind("<<ComboboxSelected>>", self.change_language)
+
         remember = tk.Checkbutton(
             sidebar,
             text="Ricorda password su questo PC",
@@ -491,9 +620,11 @@ class ComfyRemoteManager:
         import_button = self.make_button(sidebar, "Importa configurazione Pc Server", self.import_remote_config,
                                          "#303a49", "#3b4658")
         import_button.pack(fill="x", padx=10, pady=(0, 8))
-        path_button = self.make_button(sidebar, "Salva percorso e batch", self.save_comfy_path,
-                                       "#303a49", "#3b4658")
-        path_button.pack(fill="x", padx=10, pady=(0, 8))
+        self.btn_save_path = self.make_button(sidebar, "Salva percorso e batch", self.save_comfy_path,
+                                              "#303a49", "#3b4658")
+        self.btn_save_path.pack(fill="x", padx=10, pady=(0, 8))
+        for variable in (self.comfy_path_var, self.start_batch_var):
+            variable.trace_add("write", lambda *_args: self.update_buttons())
 
         button_row = tk.Frame(sidebar, bg="#0b1220")
         button_row.pack(fill="x", padx=10)
@@ -770,7 +901,8 @@ Write-Output ('RECYCLE_JSON:' + (ConvertTo-Json -InputObject $result -Compress -
             width=10,
         )
         self.btn_terminal.pack(side="left", padx=3)
-        self.view_button_text_var = StringVar(value="Visualizza: Dettagli")
+        self.view_button_text_var = LocalizedStringVar(self.root, "Visualizza: Dettagli", self.t)
+        self._localized_vars.append(self.view_button_text_var)
         self.view_button = tk.Menubutton(
             brow_top,
             textvariable=self.view_button_text_var,
@@ -911,7 +1043,7 @@ Write-Output ('RECYCLE_JSON:' + (ConvertTo-Json -InputObject $result -Compress -
         self.status_dot.create_oval(3, 3, 13, 13, fill=color, outline=color)
 
     def append_output(self, text):
-        self.output.insert("end", text + "\n")
+        self.output.insert("end", self.t(text) + "\n")
         self.output.see("end")
 
     def set_status(self, status):
@@ -940,6 +1072,11 @@ Write-Output ('RECYCLE_JSON:' + (ConvertTo-Json -InputObject $result -Compress -
         self.update_buttons()
 
     def update_buttons(self):
+        current_comfy_config = (self.comfy_path_var.get().strip().rstrip("\\/"),
+                                self.start_batch_var.get().strip())
+        self.set_button_enabled(self.btn_save_path,
+                                self._saved_comfy_config is None or self._imported_config_pending or
+                                current_comfy_config != self._saved_comfy_config)
         connected = self.connected
         busy = self.busy
         running = self.comfy_status == "running"
@@ -2044,6 +2181,7 @@ if ($null -ne $LASTEXITCODE) {{ exit $LASTEXITCODE }}
             menu.add_separator()
             menu.add_command(label="Aggiorna", command=self.open_remote_recycle_bin)
             try:
+                self.apply_language()
                 menu.tk_popup(x_root, y_root)
             finally:
                 menu.grab_release()
@@ -2077,6 +2215,7 @@ if ($null -ne $LASTEXITCODE) {{ exit $LASTEXITCODE }}
         menu.add_command(label="Aggiorna", command=self.refresh_folder)
 
         try:
+            self.apply_language()
             menu.tk_popup(x_root, y_root)
         finally:
             menu.grab_release()
@@ -2637,7 +2776,8 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
         text_widget.configure(yscrollcommand=vertical.set, xscrollcommand=horizontal.set, state="disabled")
         editor["text"] = text_widget
 
-        status_var = StringVar(value="Caricamento dal Pc Server...")
+        status_var = LocalizedStringVar(window, "Caricamento dal Pc Server...", self.t)
+        self._localized_vars.append(status_var)
         editor["status_var"] = status_var
         tk.Label(window, textvariable=status_var, bg=BG, fg=MUTED, anchor="w",
                  font=("Segoe UI", 8)).pack(fill="x", padx=10, pady=(4, 8))
@@ -3018,6 +3158,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
         try:
             x = self.btn_upload.winfo_rootx()
             y = self.btn_upload.winfo_rooty() + self.btn_upload.winfo_height()
+            self.apply_language()
             self.upload_menu.tk_popup(x, y)
         finally:
             self.upload_menu.grab_release()

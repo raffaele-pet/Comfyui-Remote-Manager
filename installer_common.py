@@ -13,6 +13,8 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, ttk
 
+from localization import set_active_language, translate, wrap_dialogs
+
 
 BG = "#0f1623"
 PANEL = "#151d2a"
@@ -137,8 +139,12 @@ def validate_config(config):
 
 class InstallerWindow:
     def __init__(self, title):
+        self.language = "en"
+        self.window_title = title
+        set_active_language(self.language)
+        wrap_dialogs()
         self.root = tk.Tk()
-        self.root.title(title)
+        self.root.title(self.t(title))
         self.root.geometry("790x620")
         self.root.minsize(690, 560)
         self.root.configure(bg=BG)
@@ -147,7 +153,7 @@ class InstallerWindow:
 
         header = tk.Frame(self.root, bg=BG)
         header.pack(fill="x", padx=24, pady=(22, 12))
-        self.heading = tk.Label(header, text=title, bg=BG, fg=TEXT,
+        self.heading = tk.Label(header, text=self.t(title), bg=BG, fg=TEXT,
                                 font=("Segoe UI", 19, "bold"), anchor="w")
         self.heading.pack(fill="x")
         self.description = tk.Label(header, bg=BG, fg=MUTED, font=("Segoe UI", 10),
@@ -165,9 +171,30 @@ class InstallerWindow:
         self.log_text.pack(fill="x", padx=24, pady=(0, 18))
         self.root.after(100, self._poll)
 
+    def t(self, text):
+        return translate(text, self.language)
+
+    def language_step(self, next_step, total_steps):
+        self.next_step = next_step
+        self.page("Language", "Choose your language")
+        self.heading.configure(text=f"1 / {total_steps} · Language / Lingua")
+        self.description.configure(text="Choose your language / Scegli la lingua.")
+        self.language_choice = tk.StringVar(value="en")
+        for value, label in (("en", "English"), ("it", "Italiano")):
+            tk.Radiobutton(self.form, text=label, value=value, variable=self.language_choice,
+                           bg=PANEL, fg=TEXT, selectcolor=INPUT, activebackground=PANEL,
+                           activeforeground=TEXT, font=("Segoe UI", 11)).pack(anchor="w", pady=6)
+        self.button("Continue / Continua", self.continue_language, primary=True)
+
+    def continue_language(self):
+        self.language = self.language_choice.get()
+        set_active_language(self.language)
+        self.root.title(self.t(self.window_title))
+        self.next_step()
+
     def page(self, heading, description):
-        self.heading.configure(text=heading)
-        self.description.configure(text=description)
+        self.heading.configure(text=self.t(heading))
+        self.description.configure(text=self.t(description))
         for widget in self.form.winfo_children():
             widget.destroy()
         for widget in self.actions.winfo_children():
@@ -175,7 +202,7 @@ class InstallerWindow:
         self.buttons.clear()
 
     def label(self, text):
-        tk.Label(self.form, text=text, bg=PANEL, fg=TEXT, font=("Segoe UI", 10),
+        tk.Label(self.form, text=self.t(text), bg=PANEL, fg=TEXT, font=("Segoe UI", 10),
                  justify="left", anchor="w", wraplength=710).pack(fill="x", pady=(4, 8))
 
     def entry(self, label, value=""):
@@ -187,7 +214,7 @@ class InstallerWindow:
         return variable
 
     def button(self, label, command, primary=False):
-        button = tk.Button(self.actions, text=label, command=command,
+        button = tk.Button(self.actions, text=self.t(label), command=command,
                            bg=BLUE if primary else "#303a49", fg="white", relief="flat",
                            padx=14, pady=9, font=("Segoe UI", 9, "bold"))
         button.pack(side="left", padx=(0, 8))
@@ -195,7 +222,7 @@ class InstallerWindow:
         return button
 
     def log(self, message):
-        self.events.put(("log", str(message)))
+        self.events.put(("log", self.t(message)))
 
     def _append_log(self, message):
         self.log_text.configure(state="normal")
@@ -231,7 +258,7 @@ class InstallerWindow:
                     callback(result)
                 else:
                     messagebox.showerror("Installazione", value, parent=self.root)
-                    self._append_log("ERRORE: " + value)
+                    self._append_log(self.t("ERRORE: " + value))
         self.root.after(100, self._poll)
 
 

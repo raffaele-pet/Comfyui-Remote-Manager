@@ -19,10 +19,10 @@ class UserInstaller(InstallerWindow):
         self.install_dir = Path(os.environ["LOCALAPPDATA"]) / "Programs" / "ComfyUIRemoteManager"
         self.app_dir = self.install_dir / "app"
         self.venv_dir = self.install_dir / ".venv"
-        self.intro_step()
+        self.language_step(self.intro_step, 4)
 
     def intro_step(self):
-        self.page("1 / 3 · Installa su Pc User",
+        self.page("2 / 4 · Installa su Pc User",
                   "Installa ComfyUI Remote Manager e i componenti necessari.")
         self.label("Cartella di installazione: " + str(self.install_dir))
         self.button("Avvia installazione", self.start_install, primary=True)
@@ -58,7 +58,8 @@ class UserInstaller(InstallerWindow):
         if not payload.is_dir():
             payload = Path(__file__).parent
         self.app_dir.mkdir(parents=True, exist_ok=True)
-        for name in ("comfyui_remote_manager.py", "download_worker.py", "requirements.txt", "run.bat"):
+        for name in ("comfyui_remote_manager.py", "download_worker.py", "localization.py",
+                     "requirements.txt", "run.bat"):
             source = payload / name
             if not source.is_file():
                 raise RuntimeError("File incluso nell'installer non trovato: " + name)
@@ -87,7 +88,7 @@ class UserInstaller(InstallerWindow):
         self.log("Collegamento sul Desktop creato.")
 
     def tailscale_step(self):
-        self.page("2 / 3 · Accesso a Tailscale",
+        self.page("3 / 4 · Accesso a Tailscale",
                   "Apri Tailscale e accedi con la stessa tailnet usata su Pc Server. Torna qui e verifica la connessione prima di configurare l'app.")
         self.button("Apri Tailscale", self.launch_tailscale)
         self.button("Verifica accesso", self.verify_tailscale, primary=True)
@@ -110,7 +111,7 @@ class UserInstaller(InstallerWindow):
         return ip
 
     def choice_step(self):
-        self.page("3 / 3 · Configura Pc Server",
+        self.page("4 / 4 · Configura Pc Server",
                   "Importa la configurazione, inserisci i dati a mano qui oppure direttamente nel programma.")
         self.button("Importa configurazione", self.import_config, primary=True)
         self.button("Inserisci a mano", self.manual_step)
@@ -140,7 +141,7 @@ class UserInstaller(InstallerWindow):
             messagebox.showerror("Configurazione", str(error), parent=self.root)
 
     def manual_step(self):
-        self.page("3 / 3 · Inserimento manuale",
+        self.page("4 / 4 · Inserimento manuale",
                   "Inserisci i dati di Pc Server.")
         self.host_var = self.entry("Host o IP Tailscale di Pc Server")
         self.user_var = self.entry("Utente Windows di Pc Server")
@@ -173,6 +174,7 @@ if __name__ == "__main__":
     if "--self-test" in sys.argv:
         installer.root.withdraw()
         assert (resource_path("payload") / "comfyui_remote_manager.py").is_file()
+        assert (resource_path("payload") / "localization.py").is_file()
         assert (resource_path("assets") / "ai-icons8.ico").is_file()
         installer.root.destroy()
     else:

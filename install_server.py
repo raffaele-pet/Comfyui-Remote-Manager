@@ -21,13 +21,13 @@ class ServerInstaller(InstallerWindow):
         self.ssh_user = ""
         self.cloudflared_exe = ""
         self.host = ""
-        self.choose_comfy()
+        self.language_step(self.choose_comfy, 5)
 
     def choose_comfy(self):
-        self.page("1 / 4 · ComfyUI su Pc Server",
+        self.page("2 / 5 · ComfyUI su Pc Server",
                   "Seleziona la cartella principale di ComfyUI Portable. Scegli il file batch che lo avvia e l'utente Windows da usare per SSH.")
         self.path_var = self.entry("Cartella ComfyUI Portable")
-        browse = tk.Button(self.form, text="Sfoglia...", command=self.browse_comfy,
+        browse = tk.Button(self.form, text=self.t("Sfoglia..."), command=self.browse_comfy,
                            bg="#303a49", fg="white", relief="flat", padx=12, pady=6)
         browse.pack(anchor="w", pady=(0, 8))
         self.label("Batch di avvio")
@@ -107,7 +107,7 @@ class ServerInstaller(InstallerWindow):
         self.log("cloudflared pronto.")
 
     def tailscale_step(self):
-        self.page("2 / 4 · Accesso a Tailscale",
+        self.page("3 / 5 · Accesso a Tailscale",
                   "Apri Tailscale, accedi dal browser e usa la stessa tailnet che userai su Pc User. Torna qui e verifica la connessione.")
         self.label("Se l'icona Tailscale non appare, cercala nell'area di notifica di Windows.")
         self.button("Apri Tailscale", self.launch_tailscale)
@@ -139,7 +139,7 @@ class ServerInstaller(InstallerWindow):
         self.cloudflare_step()
 
     def cloudflare_step(self):
-        self.page("3 / 4 · Cloudflare",
+        self.page("4 / 5 · Cloudflare",
                   "Il link pubblico apparirà nel programma dopo l'avvio di ComfyUI.")
         self.button("Verifica cloudflared", self.verify_cloudflared, primary=True)
 
@@ -148,7 +148,7 @@ class ServerInstaller(InstallerWindow):
                        lambda _result: self.save_step())
 
     def save_step(self):
-        self.page("4 / 4 · Esporta configurazione",
+        self.page("5 / 5 · Esporta configurazione",
                   "Salva il file di configurazione e copialo su Pc User. Contiene indirizzo, utente e percorsi; non contiene password.")
         self.label("Pc Server: " + self.host)
         self.label("Utente SSH: " + self.ssh_user)

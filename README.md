@@ -1,44 +1,45 @@
 # ComfyUI Remote Manager
 
-Applicazione Windows per gestire ComfyUI Portable su **Pc Server** da **Pc User**. Pc User si collega a Pc Server tramite Tailscale e SSH; il pulsante **Avvia** lancia ComfyUI e un Cloudflare Quick Tunnel, mostrando il link nell'app.
+ComfyUI Remote Manager is a Windows desktop app for running and managing ComfyUI Portable on another computer. The **Server PC** hosts ComfyUI; the **User PC** runs this app. They connect through Tailscale and SSH. Starting ComfyUI also starts a Cloudflare Quick Tunnel and displays its public link in the app.
 
-## Installazione su Pc Server
+Both installers and the app support English and Italian. English is the default. Each installer asks for a language before setup begins. In the app, change **Language** in the left sidebar; the choice is saved immediately for future launches.
 
-Pc Server deve avere ComfyUI Portable per Windows, con un batch `run*.bat` e `python_embeded\python.exe` nella cartella principale.
+## Install the Server PC
 
-1. Scarica `install-server.exe` su Pc Server e aprilo con un doppio clic. Windows chiederà l'autorizzazione amministratore.
-2. Nella finestra scegli la cartella di ComfyUI Portable, il batch di avvio e l'utente Windows per SSH. Premi **Installa componenti** e segui l'avanzamento mostrato nella finestra. Verranno preparati OpenSSH Server, Tailscale e `cloudflared`.
-3. Premi **Apri Tailscale**, completa l'accesso nel browser e poi **Verifica accesso**. Usa la stessa tailnet su entrambi i PC. L'installer prova ad abilitare **Run Unattended**; se non riesce, abilitalo dalle preferenze Tailscale.
-4. Premi **Verifica cloudflared**.
-5. Premi **Salva comfyui-remote-config.json**, scegli dove salvarlo e copialo su Pc User. Il file non contiene password.
+The Server PC needs the Windows portable edition of ComfyUI, with a `run*.bat` launcher and `python_embeded\python.exe` in its main folder. The Windows account used for SSH must have a password; a Windows Hello PIN is not sufficient.
 
-L'account Windows di Pc Server deve avere una password utilizzabile via SSH; il PIN di Windows Hello non la sostituisce. L'app avvia `cloudflared` quando premi **Avvia**.
+1. Download [install-server.exe](./install-server.exe) on the Server PC and open it. Approve the Windows administrator prompt.
+2. Choose a language, the ComfyUI Portable folder, a startup batch file, and the Windows account to use for SSH. The installer prepares OpenSSH Server, Tailscale, and `cloudflared`.
+3. Open Tailscale from the installer, sign in, and verify the connection. Use the same tailnet on both computers. If unattended mode cannot be enabled automatically, enable it in Tailscale's settings.
+4. Verify `cloudflared`, then save `comfyui-remote-config.json` and copy it to the User PC. The file contains connection settings and paths, but no password.
 
-## Installazione su Pc User
+## Install the User PC
 
-1. Scarica `install-user.exe` su Pc User e aprilo con un doppio clic. La finestra mostra l'avanzamento. L'installer include il codice dell'app: non serve clonare il repository.
-2. L'installer prepara Tailscale, Python, le dipendenze dell'app, `run.bat` e un collegamento sul Desktop con l'[icona Icons8](https://icons8.it/icon/rJGwKUDZzg4L/ai).
-3. Premi **Apri Tailscale**, accedi alla stessa tailnet di Pc Server e poi **Verifica accesso**.
-4. Importa la configurazione, inserisci i dati a mano nell'installer oppure chiudilo e inseriscili nel programma dal collegamento sul Desktop. Inserisci la password SSH nel programma.
+1. Download [install-user.exe](./install-user.exe) on the User PC and open it. The installer contains the app files, so Git is not required.
+2. Choose a language and start the installation. The installer prepares Tailscale, Python, the app dependencies, `run.bat`, and a Desktop shortcut.
+3. Sign in to Tailscale with the same tailnet as the Server PC, then verify the connection.
+4. Import the configuration file from the Server PC, enter its settings manually, or close the installer and enter them in the app. Enter the SSH password in the app.
 
-Per aggiornare una precedente installazione su Pc User, scarica e apri di nuovo `install-user.exe`: l'installer aggiorna i file dell'applicazione e crea il collegamento sul Desktop.
+Open **ComfyUI Remote Manager** from the Desktop shortcut. To update an existing User PC installation, download and run the latest `install-user.exe` again.
 
-Gli installer sono eseguibili per Windows x64; serve una connessione Internet per scaricare i componenti tramite WinGet e le dipendenze Python. I sorgenti Tkinter sono `install_server.py`, `install_user.py` e `installer_common.py`.
+The installers target Windows x64. Installing components and Python packages requires an internet connection and WinGet. The setup wizard source files are `install_server.py`, `install_user.py`, and `installer_common.py`; translations are in `localization.py`.
 
-## Se sposti o rinomini ComfyUI
+## Change the ComfyUI folder or Windows user
 
-Su Pc User modifica **Cartella ComfyUI Portable su Pc Server** e premi **Salva percorso e batch**. Puoi cambiare anche il **Batch di avvio** (per esempio `run_cpu.bat`). Il percorso viene usato per Avvia, Spegni, Aggiorna, scorciatoie del browser remoto e download da URL. Se l'utente Windows di Pc Server cambia, aggiorna anche il campo **Utente** e riconnettiti.
+If ComfyUI is moved or renamed on the Server PC, update **ComfyUI Portable folder on Server PC** and, if needed, **Startup batch file** in the User PC app. Select **Save folder and batch file**. The new path is used for start, stop, update, remote file shortcuts, and direct URL downloads. If the Server PC's Windows user changes, update **User** and reconnect.
 
-Il profilo della connessione è salvato solo su Pc User in `%LOCALAPPDATA%\ComfyUIRemoteManager\connection.json`. La password è facoltativa e, se scegli di ricordarla, è protetta con la cifratura di Windows. L'app non crea file di log, link o configurazioni di download sul Desktop di Pc Server; il link Cloudflare resta visibile nell'app.
+**Save folder and batch file** is disabled when the saved folder and batch file are already current. It becomes available when they are missing, changed, or imported from a new configuration file.
 
-## Funzioni
+The connection profile is stored on the User PC at `%LOCALAPPDATA%\ComfyUIRemoteManager\connection.json`. Language preference is stored separately at `%LOCALAPPDATA%\ComfyUIRemoteManager\preferences.json`. Saving the SSH password is optional; when enabled, it is protected with Windows encryption. The app does not create report, link, or download configuration files on the Server PC Desktop.
 
-- Controllo, avvio, arresto e aggiornamento di ComfyUI.
-- Avvio del tunnel Cloudflare e visualizzazione del link pubblico.
-- Browser file SFTP con caricamento, download, anteprime, rinomina, spostamento ed eliminazione.
-- Download diretto da URL su Pc Server, senza script o configurazioni persistenti su Pc Server.
-- Terminale PowerShell SSH persistente e modifica di file di testo remoti.
+## Features
 
-Il link `trycloudflare.com` è pubblico e temporaneo. [Cloudflare indica i Quick Tunnel per test e sviluppo](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/); non usarlo per dati che richiedono accesso privato.
+- Check, start, stop, and update ComfyUI remotely.
+- Start Cloudflare and display the public link in the app.
+- Browse files over SFTP; upload, download, preview, rename, move, and delete them.
+- Download a URL directly on the Server PC without installing a persistent helper there.
+- Use a persistent SSH PowerShell terminal and edit remote text files.
 
-Icona del collegamento: [Icons8](https://icons8.it/icon/rJGwKUDZzg4L/ai). Per ricostruire i due eseguibili su Windows, installa PyInstaller e lancia `py build_installers.py`.
+The temporary `trycloudflare.com` link is public. [Cloudflare describes Quick Tunnels as suitable for testing and development](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/); do not use the link for data that must stay private.
+
+Desktop shortcut icon: [Icons8](https://icons8.it/icon/rJGwKUDZzg4L/ai). To rebuild the installers on Windows, install PyInstaller and run `py build_installers.py`.
