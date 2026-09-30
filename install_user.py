@@ -3,30 +3,29 @@
 import json
 import os
 import shutil
-import subprocess
 import sys
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox
 
-from installer_common import (FLAGS, InstallerWindow, create_shortcut, desktop_directory, find_tailscale,
+from installer_common import (InstallerWindow, create_shortcut, desktop_directory, find_tailscale,
                               open_tailscale, resource_path, run_command, tailscale_ip,
                               validate_config, winget_install, write_json)
 
 
-class PcBInstaller(InstallerWindow):
+class UserInstaller(InstallerWindow):
     def __init__(self):
-        super().__init__("Installa PC B · ComfyUI Remote Manager")
+        super().__init__("Installa Pc User · ComfyUI Remote Manager")
         self.install_dir = Path(os.environ["LOCALAPPDATA"]) / "Programs" / "ComfyUIRemoteManager"
         self.app_dir = self.install_dir / "app"
         self.venv_dir = self.install_dir / ".venv"
+        self.app_launched = False
         self.intro_step()
 
     def intro_step(self):
-        self.page("1 / 3 · Installa su PC B",
-                  "L'installer prepara Tailscale, Python, ComfyUI Remote Manager e un collegamento sul Desktop. Vedrai qui sotto l'avanzamento.")
+        self.page("1 / 3 · Installa su Pc User",
+                  "Installa ComfyUI Remote Manager e i componenti necessari.")
         self.label("Cartella di installazione: " + str(self.install_dir))
-        self.label("I file del programma sono inclusi nell'installer.")
         self.button("Avvia installazione", self.start_install, primary=True)
 
     def start_install(self):
@@ -72,7 +71,7 @@ class PcBInstaller(InstallerWindow):
         icon_target = self.app_dir / "ai-icons8.ico"
         if icon_source.resolve() != icon_target.resolve():
             shutil.copy2(icon_source, icon_target)
-        self.log("File dell'app installati.")
+        self.log("Programma installato.")
 
         venv_python = self.venv_dir / "Scripts" / "python.exe"
         if not venv_python.is_file():
@@ -86,11 +85,11 @@ class PcBInstaller(InstallerWindow):
         desktop = desktop_directory()
         create_shortcut(desktop / "ComfyUI Remote Manager.lnk",
                         self.app_dir / "run.bat", self.app_dir, icon_target)
-        self.log("Collegamento a run.bat creato sul Desktop con l'icona richiesta.")
+        self.log("Collegamento sul Desktop creato.")
 
     def tailscale_step(self):
         self.page("2 / 3 · Accesso a Tailscale",
-                  "Apri Tailscale e accedi con la stessa tailnet usata su PC A. Torna qui e verifica la connessione prima di configurare l'app.")
+                  "Apri Tailscale e accedi con la stessa tailnet usata su Pc Server. Torna qui e verifica la connessione prima di configurare l'app.")
         self.button("Apri Tailscale", self.launch_tailscale)
         self.button("Verifica accesso", self.verify_tailscale, primary=True)
 
@@ -112,9 +111,9 @@ class PcBInstaller(InstallerWindow):
         return ip
 
     def choice_step(self):
-        self.page("3 / 3 · Configura PC A",
-                  "Scegli come inserire i dati di PC A. Puoi importarli, scriverli qui, oppure aprire il programma e compilarli nella sua interfaccia.")
-        self.label("La password SSH verrà richiesta dal programma e non è nel file esportato da PC A.")
+        self.page("3 / 3 · Configura Pc Server",
+                  "Importa la configurazione, inserisci i dati a mano oppure apri il programma.")
+        self.label("Inserirai la password SSH nel programma.")
         self.button("Importa configurazione", self.import_config, primary=True)
         self.button("Inserisci a mano", self.manual_step)
         self.button("Apri il programma", self.open_app)
@@ -128,11 +127,11 @@ class PcBInstaller(InstallerWindow):
                                                  "start_batch", "cloudflared_exe")}
         profile.update({"remember_password": False, "password": ""})
         write_json(self.profile_path(), profile)
-        self.log("Profilo PC A salvato su questo PC.")
+        self.log("Configurazione salvata.")
         self.ready_step()
 
     def import_config(self):
-        path = filedialog.askopenfilename(parent=self.root, title="Configurazione di PC A",
+        path = filedialog.askopenfilename(parent=self.root, title="Configurazione di Pc Server",
                                           filetypes=[("JSON", "*.json")])
         if not path:
             return
@@ -144,13 +143,13 @@ class PcBInstaller(InstallerWindow):
 
     def manual_step(self):
         self.page("3 / 3 · Inserimento manuale",
-                  "Inserisci i dati di PC A. Li trovi nella finestra dell'installer PC A o nelle impostazioni di Windows e Tailscale.")
-        self.host_var = self.entry("Host o IP Tailscale di PC A")
-        self.user_var = self.entry("Utente Windows di PC A")
+                  "Inserisci i dati di Pc Server.")
+        self.host_var = self.entry("Host o IP Tailscale di Pc Server")
+        self.user_var = self.entry("Utente Windows di Pc Server")
         self.port_var = self.entry("Porta SSH", "22")
-        self.comfy_var = self.entry("Cartella ComfyUI Portable su PC A (es. C:\\ComfyUI)")
+        self.comfy_var = self.entry("Cartella ComfyUI Portable su Pc Server (es. C:\\ComfyUI)")
         self.batch_var = self.entry("Batch di avvio", "run_nvidia_gpu.bat")
-        self.cloudflare_var = self.entry("Percorso cloudflared su PC A",
+        self.cloudflare_var = self.entry("Percorso cloudflared su Pc Server",
                                         r"C:\ProgramData\ComfyUIRemoteManager\cloudflared.exe")
         self.button("Salva e continua", self.save_manual, primary=True)
         self.button("Indietro", self.choice_step)
@@ -167,20 +166,28 @@ class PcBInstaller(InstallerWindow):
 
     def ready_step(self):
         self.page("Installazione completata",
-                  "ComfyUI Remote Manager è pronto. Aprilo, inserisci la password SSH di PC A e premi Connetti.")
-        self.label("Trovi il collegamento a run.bat sul Desktop con l'icona richiesta.")
+                  "ComfyUI Remote Manager è pronto. Aprilo, inserisci la password SSH di Pc Server e premi Connetti.")
+        self.label("Trovi il programma anche sul Desktop.")
         self.button("Apri ComfyUI Remote Manager", self.open_app, primary=True)
         self.button("Chiudi", self.root.destroy)
 
     def open_app(self):
-        subprocess.Popen([str(self.venv_dir / "Scripts" / "pythonw.exe"),
-                          str(self.app_dir / "comfyui_remote_manager.py")],
-                         cwd=self.app_dir, creationflags=FLAGS)
-        self.log("ComfyUI Remote Manager aperto.")
+        if self.app_launched:
+            return
+        try:
+            shortcut = desktop_directory() / "ComfyUI Remote Manager.lnk"
+            if not shortcut.is_file():
+                raise FileNotFoundError("Collegamento sul Desktop non trovato.")
+            os.startfile(shortcut)
+        except (OSError, RuntimeError) as error:
+            messagebox.showerror("Avvio", str(error), parent=self.root)
+            return
+        self.app_launched = True
+        self.root.after(600, self.root.destroy)
 
 
 if __name__ == "__main__":
-    installer = PcBInstaller()
+    installer = UserInstaller()
     if "--self-test" in sys.argv:
         installer.root.withdraw()
         assert (resource_path("payload") / "comfyui_remote_manager.py").is_file()

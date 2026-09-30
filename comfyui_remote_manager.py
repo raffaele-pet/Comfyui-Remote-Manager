@@ -33,7 +33,7 @@ except ModuleNotFoundError:
     raise
 
 # =========================================================
-# CONFIGURAZIONE PC1
+# CONFIGURAZIONE Pc Server
 # =========================================================
 DEFAULT_HOST = ""
 DEFAULT_USER = ""
@@ -159,7 +159,7 @@ DISABLED_FG = "#708096"
 class ComfyRemoteManager:
     def __init__(self, root: Tk):
         self.root = root
-        self.root.title("PC2 → PC1 ComfyUI Remote Manager")
+        self.root.title("ComfyUI Remote Manager")
         self.root.geometry("1480x820")
         self.root.minsize(1180, 720)
         self.root.configure(bg=BG)
@@ -319,9 +319,9 @@ class ComfyRemoteManager:
 
     def import_remote_config(self):
         if self.connected:
-            messagebox.showwarning("Configurazione", "Disconnetti PC A prima di importare un altro profilo.")
+            messagebox.showwarning("Configurazione", "Disconnetti Pc Server prima di importare un altro profilo.")
             return
-        path = filedialog.askopenfilename(title="Configurazione esportata da PC A",
+        path = filedialog.askopenfilename(title="Configurazione esportata da Pc Server",
                                           filetypes=[("JSON", "*.json")], parent=self.root)
         if not path:
             return
@@ -358,7 +358,7 @@ class ComfyRemoteManager:
         self.password_var.set("")
         self.remember_password_var.set(False)
         self.save_connection_profile(host, port, user, "", False)
-        self.append_output("Configurazione di PC A importata. Inserisci la password SSH e connettiti.")
+        self.append_output("Configurazione di Pc Server importata. Inserisci la password SSH e connettiti.")
 
     @staticmethod
     def valid_comfy_path(path):
@@ -392,7 +392,7 @@ class ComfyRemoteManager:
     def comfy_root(self):
         path = self.comfy_dir
         if not self.valid_comfy_path(path):
-            raise ValueError("Configura il percorso Windows della cartella ComfyUI Portable su PC A.")
+            raise ValueError("Configura il percorso Windows della cartella ComfyUI Portable su Pc Server.")
         return path
 
     def comfy_subfolder(self, suffix=""):
@@ -471,7 +471,7 @@ class ComfyRemoteManager:
         self.sidebar_field(connection_row, "Utente", self.user_var, side="left", width=15)
         self.sidebar_field(connection_row, "Porta", self.port_var, side="left", width=6)
         self.sidebar_field(sidebar, "Password", self.password_var, show="*")
-        self.sidebar_field(sidebar, "Cartella ComfyUI Portable su PC A", self.comfy_path_var)
+        self.sidebar_field(sidebar, "Cartella ComfyUI Portable su Pc Server", self.comfy_path_var)
         self.sidebar_field(sidebar, "Batch di avvio", self.start_batch_var)
 
         remember = tk.Checkbutton(
@@ -488,7 +488,7 @@ class ComfyRemoteManager:
         )
         remember.pack(anchor="w", padx=10, pady=(0, 8))
 
-        import_button = self.make_button(sidebar, "Importa configurazione PC A", self.import_remote_config,
+        import_button = self.make_button(sidebar, "Importa configurazione Pc Server", self.import_remote_config,
                                          "#303a49", "#3b4658")
         import_button.pack(fill="x", padx=10, pady=(0, 8))
         path_button = self.make_button(sidebar, "Salva percorso e batch", self.save_comfy_path,
@@ -627,7 +627,7 @@ Write-Output ('RECYCLE_JSON:' + (ConvertTo-Json -InputObject $result -Compress -
                 raise RuntimeError((err or out).strip() or "Errore durante la lettura del Cestino.")
             marker = next((line for line in out.splitlines() if line.startswith("RECYCLE_JSON:")), None)
             if marker is None:
-                raise RuntimeError("PC1 non ha restituito l'elenco del Cestino.")
+                raise RuntimeError("Pc Server non ha restituito l'elenco del Cestino.")
             payload = json.loads(marker[len("RECYCLE_JSON:"):])
             if isinstance(payload, dict):
                 payload = [payload]
@@ -685,7 +685,7 @@ Write-Output ('RECYCLE_JSON:' + (ConvertTo-Json -InputObject $result -Compress -
                  font=("Segoe UI", 19, "bold")).pack(anchor="w")
         tk.Label(
             header,
-            text="Avvia ComfyUI, genera il link pubblico e gestisci i file di PC1 da un'unica finestra.",
+            text="Avvia ComfyUI, genera il link pubblico e gestisci i file di Pc Server da un'unica finestra.",
             bg=BG,
             fg=MUTED,
             font=("Segoe UI", 9),
@@ -738,7 +738,7 @@ Write-Output ('RECYCLE_JSON:' + (ConvertTo-Json -InputObject $result -Compress -
         )
         main.pack(fill="both", expand=True, padx=12, pady=(3, 12))
 
-        browser = self.panel(main, "File browser remoto PC1")
+        browser = self.panel(main, "File browser remoto Pc Server")
         main.add(browser, minsize=650, stretch="always", width=1050, padx=0)
 
         brow_top = tk.Frame(browser, bg=PANEL)
@@ -861,9 +861,7 @@ Write-Output ('RECYCLE_JSON:' + (ConvertTo-Json -InputObject $result -Compress -
         )
         yscroll = ttk.Scrollbar(self.details_view, orient="vertical", command=self.tree.yview)
         yscroll.pack(side="right", fill="y")
-        xscroll = ttk.Scrollbar(self.details_view, orient="horizontal", command=self.tree.xview)
-        xscroll.pack(side="bottom", fill="x")
-        self.tree.configure(yscrollcommand=yscroll.set, xscrollcommand=xscroll.set)
+        self.tree.configure(yscrollcommand=yscroll.set)
 
         self.icon_view = tk.Frame(self.file_view_area, bg=PANEL_2)
         self.icon_canvas = tk.Canvas(
@@ -1059,7 +1057,7 @@ Write-Output ('RECYCLE_JSON:' + (ConvertTo-Json -InputObject $result -Compress -
             return
         comfy_dir = self.comfy_path_var.get().strip().rstrip("\\/")
         if not self.valid_comfy_path(comfy_dir):
-            messagebox.showwarning("Percorso ComfyUI", "Inserisci la cartella Windows di ComfyUI Portable su PC A.")
+            messagebox.showwarning("Percorso ComfyUI", "Inserisci la cartella Windows di ComfyUI Portable su Pc Server.")
             return
         start_batch = self.start_batch_var.get().strip()
         if not self.valid_start_batch(start_batch):
@@ -1165,7 +1163,7 @@ Write-Output ('RECYCLE_JSON:' + (ConvertTo-Json -InputObject $result -Compress -
     def run_command(self, command, title=None, timeout=None, stream=False, stop_on_done=False,
                     input_data=None, display_command=None):
         if not self.ensure_connected():
-            raise RuntimeError("Non connesso a PC1.")
+            raise RuntimeError("Non connesso a Pc Server.")
 
         if title:
             self.enqueue("output", f"\n=== {title} ===")
@@ -1258,7 +1256,7 @@ Write-Output ('RECYCLE_JSON:' + (ConvertTo-Json -InputObject $result -Compress -
 
     def run_command_quiet(self, command, timeout=None):
         if not self.ensure_connected():
-            raise RuntimeError("Non connesso a PC1.")
+            raise RuntimeError("Non connesso a Pc Server.")
         stdin, stdout, stderr = self.client.exec_command(command, get_pty=False, timeout=timeout)
         out = stdout.read().decode("utf-8", errors="replace")
         err = stderr.read().decode("utf-8", errors="replace")
@@ -1280,7 +1278,7 @@ Write-Output ('RECYCLE_JSON:' + (ConvertTo-Json -InputObject $result -Compress -
 
     def start_long_running_command(self, command, title, channel_attr, on_url=False, display_command=None):
         if not self.ensure_connected():
-            raise RuntimeError("Non connesso a PC1.")
+            raise RuntimeError("Non connesso a Pc Server.")
         self.enqueue("output", f"\n=== {title} ===")
         self.enqueue("output", f"> {self.command_for_display(command, display_command)}")
         transport = self.client.get_transport()
@@ -1412,7 +1410,7 @@ if ($null -ne $LASTEXITCODE) {{ exit $LASTEXITCODE }}
         command = self.powershell_encoded_command(script)
         code, out, _err = self.run_command_quiet(command, timeout=10)
         if code != 0:
-            raise RuntimeError("Impossibile verificare i processi cloudflared su PC1.")
+            raise RuntimeError("Impossibile verificare i processi cloudflared su Pc Server.")
         for line in reversed(out.splitlines()):
             try:
                 return int(line.strip())
@@ -2061,7 +2059,7 @@ if ($null -ne $LASTEXITCODE) {{ exit $LASTEXITCODE }}
                     menu.add_command(label="Anteprima", command=lambda current=item: self.preview_remote_image(current))
                 elif self.is_text_file(item["name"]):
                     menu.add_command(label="Apri / modifica", command=lambda current=item: self.edit_remote_text_file(current))
-                menu.add_command(label="Scarica su PC2...", command=self.download_selected_file)
+                menu.add_command(label="Scarica su Pc User...", command=self.download_selected_file)
                 menu.add_separator()
             menu.add_command(label="Rinomina", command=self.rename_selected_item)
             menu.add_command(label="Copia", command=lambda: self.set_remote_clipboard("copy"))
@@ -2410,7 +2408,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
             return
         suffix = Path(item["name"]).suffix
         local_path = filedialog.asksaveasfilename(
-            title="Scarica file da PC1",
+            title="Scarica file da Pc Server",
             initialfile=item["name"],
             defaultextension=suffix,
             filetypes=[("Tutti i file", "*.*")],
@@ -2421,12 +2419,12 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
         self.busy = True
         self.update_buttons()
         threading.Thread(
-            target=self._download_to_pc2_thread,
+            target=self._download_to_user_thread,
             args=(item, local_path),
             daemon=True,
         ).start()
 
-    def _download_to_pc2_thread(self, item, local_path):
+    def _download_to_user_thread(self, item, local_path):
         download_sftp = None
         partial_path = Path(str(local_path) + ".part")
         try:
@@ -2439,7 +2437,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
             last_report_percent = -1
 
             self.enqueue("output", f"Download SFTP:\n{item['path']}\n→ {local_path}")
-            self.enqueue("upload_progress", 0.0, "Download su PC2: 0%")
+            self.enqueue("upload_progress", 0.0, "Download su Pc User: 0%")
 
             with download_sftp.open(item["path"], "rb") as remote_file:
                 with open(partial_path, "wb") as local_file:
@@ -2459,7 +2457,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
                             remaining = max(total - transferred, 0)
                             eta = self.format_seconds(remaining / speed) if speed > 0 else "—"
                             text = (
-                                f"Download su PC2: {percent:.1f}%  "
+                                f"Download su Pc User: {percent:.1f}%  "
                                 f"{self.format_size(transferred)} / {self.format_size(total)}  "
                                 f"{self.format_size(speed)}/s  ETA {eta}"
                             )
@@ -2468,17 +2466,17 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
                             last_report_percent = rounded_percent
 
             os.replace(partial_path, local_path)
-            self.enqueue("upload_progress", 100.0, "Download su PC2 completato")
+            self.enqueue("upload_progress", 100.0, "Download su Pc User completato")
             self.enqueue("output", f"Download completato: {local_path}")
-            self.enqueue("info_dialog", "Download completato", f"File salvato su PC2:\n{local_path}")
+            self.enqueue("info_dialog", "Download completato", f"File salvato su Pc User:\n{local_path}")
         except Exception as e:
             try:
                 if partial_path.exists():
                     partial_path.unlink()
             except Exception:
                 pass
-            self.enqueue("upload_progress", 0.0, "Download su PC2 fallito")
-            self.enqueue("error_dialog", "Errore download su PC2", str(e))
+            self.enqueue("upload_progress", 0.0, "Download su Pc User fallito")
+            self.enqueue("error_dialog", "Errore download su Pc User", str(e))
         finally:
             if download_sftp:
                 try:
@@ -2505,7 +2503,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
         window.configure(bg=BG)
         label = tk.Label(
             window,
-            text="Caricamento anteprima da PC1...",
+            text="Caricamento anteprima da Pc Server...",
             bg=PANEL_2,
             fg=MUTED,
             font=("Segoe UI", 10),
@@ -2575,7 +2573,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
         if item.get("raw_size", 0) > REMOTE_TEXT_MAX_FILE_SIZE:
             messagebox.showwarning(
                 "File troppo grande",
-                "L'editor remoto apre file di testo fino a 5 MB. Puoi comunque scaricarlo su PC2.",
+                "L'editor remoto apre file di testo fino a 5 MB. Puoi comunque scaricarlo su Pc User.",
             )
             return
 
@@ -2587,7 +2585,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
             "loading": True,
         }
         window = editor["window"]
-        window.title(f"Editor remoto PC1 - {item['name']}")
+        window.title(f"Editor remoto Pc Server - {item['name']}")
         window.geometry("1000x680")
         window.minsize(700, 450)
         window.configure(bg=BG)
@@ -2599,7 +2597,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
                  font=("Consolas", 9)).pack(side="left", fill="x", expand=True, padx=10, pady=9)
         save_button = self.make_button(
             toolbar,
-            "Salva su PC1",
+            "Salva su Pc Server",
             lambda: self.save_remote_text(editor),
             GREEN,
             GREEN_HOVER,
@@ -2639,7 +2637,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
         text_widget.configure(yscrollcommand=vertical.set, xscrollcommand=horizontal.set, state="disabled")
         editor["text"] = text_widget
 
-        status_var = StringVar(value="Caricamento dal PC1...")
+        status_var = StringVar(value="Caricamento dal Pc Server...")
         editor["status_var"] = status_var
         tk.Label(window, textvariable=status_var, bg=BG, fg=MUTED, anchor="w",
                  font=("Segoe UI", 8)).pack(fill="x", padx=10, pady=(4, 8))
@@ -2689,7 +2687,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
         editor["encoding"] = encoding
         editor["dirty"] = False
         editor["loading"] = False
-        editor["status_var"].set(f"Caricato da PC1 · {encoding} · {len(content):,} caratteri")
+        editor["status_var"].set(f"Caricato da Pc Server · {encoding} · {len(content):,} caratteri")
         self.set_button_enabled(editor["save_button"], True)
         text_widget.focus_set()
 
@@ -2707,7 +2705,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
         if editor.get("loading") or not self.ensure_connected():
             return
         content = editor["text"].get("1.0", "end-1c")
-        editor["status_var"].set("Salvataggio su PC1...")
+        editor["status_var"].set("Salvataggio su Pc Server...")
         self.set_button_enabled(editor["save_button"], False)
         threading.Thread(
             target=self._save_remote_text_thread,
@@ -2737,7 +2735,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
         if not window or not window.winfo_exists():
             return
         editor["dirty"] = False
-        editor["status_var"].set(f"Salvato su PC1 · {time.strftime('%H:%M:%S')}")
+        editor["status_var"].set(f"Salvato su Pc Server · {time.strftime('%H:%M:%S')}")
         self.set_button_enabled(editor["save_button"], True)
         self.refresh_folder()
 
@@ -2758,7 +2756,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
         ):
             return
         editor["loading"] = True
-        editor["status_var"].set("Ricaricamento dal PC1...")
+        editor["status_var"].set("Ricaricamento dal Pc Server...")
         self.set_button_enabled(editor["save_button"], False)
         threading.Thread(target=self._load_remote_text_thread, args=(editor,), daemon=True).start()
 
@@ -2951,7 +2949,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
 
         url = simpledialog.askstring(
             "Scarica modello da URL",
-            "Incolla il link diretto di download.\nIl download partirà direttamente da PC1 nella cartella remota attuale.",
+            "Incolla il link diretto di download.\nIl download partirà direttamente da Pc Server nella cartella remota attuale.",
             parent=self.root,
         )
         if not url:
@@ -2960,7 +2958,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
 
         filename = simpledialog.askstring(
             "Nome file opzionale",
-            "Nome file da salvare su PC1.\nLascia vuoto per usare il nome proposto dal server/link.",
+            "Nome file da salvare su Pc Server.\nLascia vuoto per usare il nome proposto dal server/link.",
             parent=self.root,
         )
         filename = (filename or "").strip()
@@ -2984,7 +2982,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
 
     def _download_url_thread(self, url, dest_dir_win, filename, token):
         try:
-            self.enqueue("output", f"Download diretto su PC A in {dest_dir_win}")
+            self.enqueue("output", f"Download diretto su Pc Server in {dest_dir_win}")
             self.enqueue("upload_progress", 0.0, "Download remoto: preparazione...")
             cfg = {
                 "url": url,
@@ -2997,7 +2995,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
             python_exe = self.ps_literal(self.comfy_root() + r"\python_embeded\python.exe")
             script = f"$python = {python_exe}; & $python -u -c 'import sys;exec(sys.stdin.read())'"
             command = self.powershell_encoded_command(script)
-            code, out, err = self.run_command(command, title="DOWNLOAD DIRETTO SU PC A",
+            code, out, err = self.run_command(command, title="DOWNLOAD DIRETTO SU Pc Server",
                                               stream=True, timeout=None, input_data=payload,
                                               display_command="Python integrato di ComfyUI: download in memoria")
 
@@ -3027,7 +3025,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
     def upload_file(self):
         if not self.connected or not self.sftp:
             return
-        local_path = filedialog.askopenfilename(title="Scegli file da caricare su PC1", parent=self.root)
+        local_path = filedialog.askopenfilename(title="Scegli file da caricare su Pc Server", parent=self.root)
         if not local_path:
             return
         remote_path = self.current_remote_path.rstrip("/") + "/" + Path(local_path).name
@@ -3045,7 +3043,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
     def upload_folder(self):
         if not self.connected or not self.sftp:
             return
-        local_path = filedialog.askdirectory(title="Scegli cartella da caricare su PC1", parent=self.root)
+        local_path = filedialog.askdirectory(title="Scegli cartella da caricare su Pc Server", parent=self.root)
         if not local_path:
             return
         folder_name = Path(local_path).name or "cartella"
@@ -3089,7 +3087,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
         except Exception as e:
             messagebox.showerror(
                 "Controllo destinazione fallito",
-                f"Non riesco a controllare se esiste già un elemento con lo stesso nome su PC1:\n\n{remote_path}\n\n{e}",
+                f"Non riesco a controllare se esiste già un elemento con lo stesso nome su Pc Server:\n\n{remote_path}\n\n{e}",
                 parent=self.root,
             )
             return None
@@ -3112,14 +3110,14 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
         if not messagebox.askyesno(
             "Elemento già presente",
             (
-                f"Su PC1 esiste già un/a {existing_kind} con lo stesso nome.\n\n"
+                f"Su Pc Server esiste già un/a {existing_kind} con lo stesso nome.\n\n"
                 f"Stai caricando un/a {upload_kind} in:\n{remote_path}\n\n"
                 f"Vuoi sostituire?\n\n{action}"
             ),
             icon="warning",
             parent=self.root,
         ):
-            self.append_output(f"Upload annullato: elemento già presente su PC1: {remote_path}")
+            self.append_output(f"Upload annullato: elemento già presente su Pc Server: {remote_path}")
             return None
 
         return True
@@ -3223,7 +3221,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
             existing = self.remote_item_info(upload_sftp, remote_path)
             if existing:
                 if not replace_existing:
-                    raise RuntimeError(f"Su PC1 esiste gia' un elemento con questo nome: {remote_path}")
+                    raise RuntimeError(f"Su Pc Server esiste gia' un elemento con questo nome: {remote_path}")
                 self.enqueue("output", f"Sostituisco elemento remoto esistente: {remote_path}")
                 self.remove_remote_item(upload_sftp, remote_path)
 
@@ -3298,7 +3296,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
             existing = self.remote_item_info(upload_sftp, remote_path)
             if existing:
                 if not replace_existing:
-                    raise RuntimeError(f"Su PC1 esiste gia' un elemento con questo nome: {remote_path}")
+                    raise RuntimeError(f"Su Pc Server esiste gia' un elemento con questo nome: {remote_path}")
                 self.enqueue("output", f"Sostituisco elemento remoto esistente: {remote_path}")
                 self.remove_remote_item(upload_sftp, remote_path)
 
