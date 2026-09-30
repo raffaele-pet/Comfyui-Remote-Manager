@@ -17,11 +17,13 @@ L'account Windows di PC A deve avere una password utilizzabile via SSH; il PIN d
 ## Installazione su PC B
 
 1. Scarica `install-pc-b.exe` su PC B e aprilo con un doppio clic. La finestra mostra l'avanzamento. L'installer include il codice dell'app: non serve clonare il repository.
-2. L'installer prepara Tailscale, Python, le dipendenze dell'app, `run.bat` e un collegamento nel menu Start con l'[icona richiesta di Icons8](https://icons8.it/icon/rJGwKUDZzg4L/ai).
+2. L'installer prepara Tailscale, Python, le dipendenze dell'app, `run.bat` e un collegamento a `run.bat` sul Desktop con l'[icona richiesta di Icons8](https://icons8.it/icon/rJGwKUDZzg4L/ai).
 3. Premi **Apri Tailscale**, accedi alla stessa tailnet di PC A e poi **Verifica accesso**.
 4. Scegli **Importa configurazione**, **Inserisci a mano** oppure **Apri il programma** e compila i dati lì. Inserisci la password SSH nell'app.
 
-Nessun passaggio richiede di aprire PowerShell. Gli installer sono eseguibili per Windows x64; serve una connessione Internet per scaricare i componenti tramite WinGet e le dipendenze Python. I sorgenti Tkinter sono `install_pc_a.py`, `install_pc_b.py` e `installer_common.py`.
+Per aggiornare una precedente installazione su PC B, scarica e apri di nuovo `install-pc-b.exe`: l'installer aggiorna i file dell'applicazione e crea il collegamento sul Desktop.
+
+Gli installer sono eseguibili per Windows x64; serve una connessione Internet per scaricare i componenti tramite WinGet e le dipendenze Python. I sorgenti Tkinter sono `install_pc_a.py`, `install_pc_b.py` e `installer_common.py`.
 
 ## Se sposti o rinomini ComfyUI
 

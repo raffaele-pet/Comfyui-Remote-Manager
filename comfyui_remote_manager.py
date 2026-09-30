@@ -43,7 +43,7 @@ COMFY_LOCAL_URL = "http://127.0.0.1:8188/system_stats"
 
 STOP_ALL_REMOTE_SCRIPT = rf'''
 $ErrorActionPreference = 'SilentlyContinue'
-$comfyRoot = '__COMFY_ROOT__'
+$comfyRoot = __COMFY_ROOT__
 
 function Get-ComfyTargets {{
     $targets = @()
@@ -399,10 +399,6 @@ class ComfyRemoteManager:
         path = self.normalize_sftp_path(self.comfy_root())
         return posixpath.join(path, suffix) if suffix else path
 
-    @staticmethod
-    def ps_literal(path):
-        return path.replace("'", "''")
-
     # -----------------------------------------------------
     # UI SETUP
     # -----------------------------------------------------
@@ -453,16 +449,6 @@ class ComfyRemoteManager:
         sidebar = tk.Frame(parent, bg="#0b1220", width=248, highlightthickness=1, highlightbackground=BORDER)
         sidebar.pack(side="left", fill="y")
         sidebar.pack_propagate(False)
-
-        title_row = tk.Frame(sidebar, bg="#0b1220")
-        title_row.pack(fill="x", padx=14, pady=(14, 4))
-        tk.Label(
-            title_row,
-            text="SSH PC1",
-            bg="#0b1220",
-            fg=TEXT,
-            font=("Segoe UI", 13, "bold"),
-        ).pack(side="left")
 
         host_card = tk.Frame(sidebar, bg=PANEL, highlightthickness=1, highlightbackground=BORDER)
         host_card.pack(fill="x", padx=10, pady=(4, 10))
@@ -1183,7 +1169,7 @@ Write-Output ('RECYCLE_JSON:' + (ConvertTo-Json -InputObject $result -Compress -
 
         if title:
             self.enqueue("output", f"\n=== {title} ===")
-        self.enqueue("output", f"> {display_command or command}")
+        self.enqueue("output", f"> {self.command_for_display(command, display_command)}")
 
         stdin, stdout, stderr = self.client.exec_command(command, get_pty=False, timeout=timeout)
         chan = stdout.channel
@@ -1296,7 +1282,7 @@ Write-Output ('RECYCLE_JSON:' + (ConvertTo-Json -InputObject $result -Compress -
         if not self.ensure_connected():
             raise RuntimeError("Non connesso a PC1.")
         self.enqueue("output", f"\n=== {title} ===")
-        self.enqueue("output", f"> {display_command or command}")
+        self.enqueue("output", f"> {self.command_for_display(command, display_command)}")
         transport = self.client.get_transport()
         if not transport or not transport.is_active():
             raise RuntimeError("Connessione SSH non attiva.")
@@ -1406,8 +1392,8 @@ Write-Output ('RECYCLE_JSON:' + (ConvertTo-Json -InputObject $result -Compress -
         batch = self.ps_literal(self.comfy_root() + "\\" + self.start_batch)
         script = rf'''
 $ErrorActionPreference = 'Stop'
-$root = '{root}'
-$batch = '{batch}'
+$root = {root}
+$batch = {batch}
 
 if (-not (Test-Path -LiteralPath $batch -PathType Leaf)) {{
     Write-Error ('Batch di avvio non trovato: ' + $batch)
@@ -1453,7 +1439,7 @@ if ($null -ne $LASTEXITCODE) {{ exit $LASTEXITCODE }}
             self.enqueue("output", f"Avvio Cloudflare: tentativo {attempt}/{attempts}...")
             exe = self.ps_literal(self.cloudflared_exe)
             command = self.powershell_encoded_command(
-                f"$exe = '{exe}'; & $exe tunnel --url http://127.0.0.1:8188"
+                f"$exe = {exe}; & $exe tunnel --url http://127.0.0.1:8188"
             )
             self.start_long_running_command(
                 command,
@@ -1521,7 +1507,7 @@ if ($null -ne $LASTEXITCODE) {{ exit $LASTEXITCODE }}
     def _update_thread(self):
         try:
             batch = self.ps_literal(self.comfy_root() + r"\update\update_comfyui.bat")
-            script = f"$batch = '{batch}'; if (-not (Test-Path -LiteralPath $batch -PathType Leaf)) {{ throw 'Update ComfyUI non trovato' }}; Set-Location -LiteralPath (Split-Path $batch); & $batch"
+            script = f"$batch = {batch}; if (-not (Test-Path -LiteralPath $batch -PathType Leaf)) {{ throw 'Update ComfyUI non trovato' }}; Set-Location -LiteralPath (Split-Path $batch); & $batch"
             self.run_command(self.powershell_encoded_command(script), title="UPDATE COMFYUI",
                              timeout=20 * 60, stream=True, stop_on_done=True)
             if self.stop_in_progress_event.is_set():
@@ -1565,19 +1551,19 @@ if ($null -ne $LASTEXITCODE) {{ exit $LASTEXITCODE }}
                 self.enqueue("status", "running")
             else:
                 command = self.build_start_comfy_command()
-                self.start_long_running_command(
+                comfy_channel = self.start_long_running_command(
                     command,
                     "AVVIA COMFYUI",
                     "comfy_channel",
                     on_url=False,
                     display_command=self.comfy_root() + "\\" + self.start_batch,
                 )
-                if not self.wait_for_comfyui(timeout_seconds=15 * 60):
+                if not self.wait_for_comfyui(timeout_seconds=15 * 60, channel=comfy_channel):
                     if self.start_cancel_event.is_set():
                         self.enqueue("output", "Avvio ComfyUI annullato da SPEGNI.")
                         return
                     self.enqueue("status", "stopped")
-                    self.enqueue("output", "ERRORE: ComfyUI non è diventato attivo entro il timeout.")
+                    self.enqueue("output", "ERRORE: ComfyUI non è diventato attivo.")
                     return
                 self.enqueue("status", "running")
 
@@ -1595,7 +1581,7 @@ if ($null -ne $LASTEXITCODE) {{ exit $LASTEXITCODE }}
             if not self.stop_in_progress_event.is_set():
                 self.enqueue("busy", False)
 
-    def wait_for_comfyui(self, timeout_seconds=900):
+    def wait_for_comfyui(self, timeout_seconds=900, channel=None):
         self.enqueue("output", "Attendo ComfyUI sulla porta 8188...")
         start = time.time()
         while time.time() - start < timeout_seconds:
@@ -1607,6 +1593,9 @@ if ($null -ne $LASTEXITCODE) {{ exit $LASTEXITCODE }}
                     return True
             except Exception:
                 pass
+            if channel is not None and channel.exit_status_ready():
+                self.enqueue("output", "Il batch di ComfyUI è terminato prima che la porta 8188 fosse pronta.")
+                return False
             elapsed = int(time.time() - start)
             self.enqueue("output", f"ComfyUI non ancora pronto... {elapsed}s")
             time.sleep(5)
@@ -2107,6 +2096,14 @@ if ($null -ne $LASTEXITCODE) {{ exit $LASTEXITCODE }}
 
     def ps_literal(self, value):
         return "'" + str(value).replace("'", "''") + "'"
+
+    @staticmethod
+    def command_for_display(command, display_command=None):
+        if display_command:
+            return display_command
+        if re.search(r"(?:^|\s)-EncodedCommand\s+", command, re.IGNORECASE):
+            return "powershell.exe (comando interno)"
+        return command if len(command) <= 240 else command[:237] + "..."
 
     def powershell_encoded_command(self, script):
         preamble = (
@@ -2998,7 +2995,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
             worker = Path(__file__).with_name("download_worker.py").read_text(encoding="utf-8")
             payload = worker + "\nmain(json.loads(" + repr(json.dumps(cfg, ensure_ascii=False)) + "))\n"
             python_exe = self.ps_literal(self.comfy_root() + r"\python_embeded\python.exe")
-            script = f"$python = '{python_exe}'; & $python -u -c 'import sys;exec(sys.stdin.read())'"
+            script = f"$python = {python_exe}; & $python -u -c 'import sys;exec(sys.stdin.read())'"
             command = self.powershell_encoded_command(script)
             code, out, err = self.run_command(command, title="DOWNLOAD DIRETTO SU PC A",
                                               stream=True, timeout=None, input_data=payload,

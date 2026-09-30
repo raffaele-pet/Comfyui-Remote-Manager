@@ -104,7 +104,7 @@ class PcAInstaller(InstallerWindow):
         if Path(cloudflared).resolve() != stable_path.resolve():
             shutil.copy2(cloudflared, stable_path)
         self.cloudflared_exe = str(stable_path)
-        self.log("cloudflared pronto. Nessun file di report creato su PC A.")
+        self.log("cloudflared pronto.")
 
     def tailscale_step(self):
         self.page("2 / 4 · Accesso a Tailscale",
@@ -156,6 +156,7 @@ class PcAInstaller(InstallerWindow):
         self.label("Utente SSH: " + self.ssh_user)
         self.label("ComfyUI: " + self.comfy_dir + " · " + self.start_batch)
         self.button("Salva comfyui-remote-config.json", self.save_config, primary=True)
+        self.button("Chiudi", self.root.destroy)
 
     def save_config(self):
         desktop = Path.home() / "Desktop"

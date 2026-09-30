@@ -9,7 +9,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox
 
-from installer_common import (FLAGS, InstallerWindow, create_shortcut, find_tailscale,
+from installer_common import (FLAGS, InstallerWindow, create_shortcut, desktop_directory, find_tailscale,
                               open_tailscale, resource_path, run_command, tailscale_ip,
                               validate_config, winget_install, write_json)
 
@@ -24,9 +24,9 @@ class PcBInstaller(InstallerWindow):
 
     def intro_step(self):
         self.page("1 / 3 · Installa su PC B",
-                  "L'installer prepara Tailscale, Python, ComfyUI Remote Manager e il collegamento nel menu Start. Vedrai qui sotto l'avanzamento.")
+                  "L'installer prepara Tailscale, Python, ComfyUI Remote Manager e un collegamento sul Desktop. Vedrai qui sotto l'avanzamento.")
         self.label("Cartella di installazione: " + str(self.install_dir))
-        self.label("Il programma e le dipendenze sono inclusi nell'installer: non servono Git né PowerShell.")
+        self.label("I file del programma sono inclusi nell'installer.")
         self.button("Avvia installazione", self.start_install, primary=True)
 
     def start_install(self):
@@ -83,12 +83,10 @@ class PcBInstaller(InstallerWindow):
         run_command([str(venv_python), "-m", "pip", "install", "-r",
                      str(self.app_dir / "requirements.txt")], self.log)
 
-        programs = Path(os.environ["APPDATA"]) / "Microsoft" / "Windows" / "Start Menu" / "Programs"
-        programs.mkdir(parents=True, exist_ok=True)
-        create_shortcut(programs / "ComfyUI Remote Manager.lnk",
-                        self.venv_dir / "Scripts" / "pythonw.exe", self.app_dir, icon_target,
-                        '"' + str(self.app_dir / "comfyui_remote_manager.py") + '"')
-        self.log("Collegamento creato con l'icona Icons8 richiesta.")
+        desktop = desktop_directory()
+        create_shortcut(desktop / "ComfyUI Remote Manager.lnk",
+                        self.app_dir / "run.bat", self.app_dir, icon_target)
+        self.log("Collegamento a run.bat creato sul Desktop con l'icona richiesta.")
 
     def tailscale_step(self):
         self.page("2 / 3 · Accesso a Tailscale",
@@ -170,7 +168,7 @@ class PcBInstaller(InstallerWindow):
     def ready_step(self):
         self.page("Installazione completata",
                   "ComfyUI Remote Manager è pronto. Aprilo, inserisci la password SSH di PC A e premi Connetti.")
-        self.label("Lo trovi anche nel menu Start con l'icona richiesta.")
+        self.label("Trovi il collegamento a run.bat sul Desktop con l'icona richiesta.")
         self.button("Apri ComfyUI Remote Manager", self.open_app, primary=True)
         self.button("Chiudi", self.root.destroy)
 

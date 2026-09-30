@@ -239,6 +239,13 @@ def is_admin():
     return bool(ctypes.windll.shell32.IsUserAnAdmin())
 
 
+def desktop_directory():
+    path = ctypes.create_unicode_buffer(32768)
+    if ctypes.windll.shell32.SHGetFolderPathW(None, 0x10, None, 0, path) != 0:
+        raise RuntimeError("Impossibile trovare la cartella Desktop di Windows.")
+    return Path(path.value)
+
+
 def create_shortcut(link_path, target, working_directory, icon, arguments=""):
     """Create a Windows .lnk with Windows Script Host, then remove the temporary script."""
     def quote(value):

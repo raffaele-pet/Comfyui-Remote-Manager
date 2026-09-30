@@ -8,7 +8,7 @@ from pathlib import Path
 root = Path(__file__).resolve().parent
 icon = root / "assets" / "ai-icons8.ico"
 base = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--onefile",
-        "--windowed", "--icon", str(icon), "--distpath", str(root),
+        "--windowed", "--distpath", str(root),
         "--workpath", str(root / "build" / "pyinstaller"),
         "--specpath", str(root / "build")]
 
