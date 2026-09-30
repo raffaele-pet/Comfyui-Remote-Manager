@@ -19,7 +19,6 @@ class UserInstaller(InstallerWindow):
         self.install_dir = Path(os.environ["LOCALAPPDATA"]) / "Programs" / "ComfyUIRemoteManager"
         self.app_dir = self.install_dir / "app"
         self.venv_dir = self.install_dir / ".venv"
-        self.app_launched = False
         self.intro_step()
 
     def intro_step(self):
@@ -112,11 +111,10 @@ class UserInstaller(InstallerWindow):
 
     def choice_step(self):
         self.page("3 / 3 · Configura Pc Server",
-                  "Importa la configurazione, inserisci i dati a mano oppure apri il programma.")
-        self.label("Inserirai la password SSH nel programma.")
+                  "Importa la configurazione, inserisci i dati a mano qui oppure direttamente nel programma.")
         self.button("Importa configurazione", self.import_config, primary=True)
         self.button("Inserisci a mano", self.manual_step)
-        self.button("Apri il programma", self.open_app)
+        self.button("Chiudi", self.root.destroy)
 
     def profile_path(self):
         return Path(os.environ["LOCALAPPDATA"]) / "ComfyUIRemoteManager" / "connection.json"
@@ -166,24 +164,8 @@ class UserInstaller(InstallerWindow):
 
     def ready_step(self):
         self.page("Installazione completata",
-                  "ComfyUI Remote Manager è pronto. Aprilo, inserisci la password SSH di Pc Server e premi Connetti.")
-        self.label("Trovi il programma anche sul Desktop.")
-        self.button("Apri ComfyUI Remote Manager", self.open_app, primary=True)
+                  "Apri ComfyUI Remote Manager dal Desktop e connettiti a Pc Server.")
         self.button("Chiudi", self.root.destroy)
-
-    def open_app(self):
-        if self.app_launched:
-            return
-        try:
-            shortcut = desktop_directory() / "ComfyUI Remote Manager.lnk"
-            if not shortcut.is_file():
-                raise FileNotFoundError("Collegamento sul Desktop non trovato.")
-            os.startfile(shortcut)
-        except (OSError, RuntimeError) as error:
-            messagebox.showerror("Avvio", str(error), parent=self.root)
-            return
-        self.app_launched = True
-        self.root.after(600, self.root.destroy)
 
 
 if __name__ == "__main__":

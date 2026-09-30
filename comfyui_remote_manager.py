@@ -457,7 +457,7 @@ class ComfyRemoteManager:
         self.connection_status_dot = tk.Canvas(card_top, width=12, height=12, bg=PANEL, highlightthickness=0)
         self.connection_status_dot.pack(side="left", padx=(0, 7))
         self.connection_status_dot.create_oval(2, 2, 10, 10, fill="#6b7280", outline="#6b7280")
-        tk.Label(card_top, text="PC remoto", bg=PANEL, fg=TEXT,
+        tk.Label(card_top, text="PC Server", bg=PANEL, fg=TEXT,
                  font=("Segoe UI", 10, "bold")).pack(side="left")
         self.conn_label = tk.Label(host_card, text="Non connesso", bg=PANEL, fg=MUTED,
                                    anchor="w", font=("Segoe UI", 8))

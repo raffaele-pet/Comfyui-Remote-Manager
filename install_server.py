@@ -140,7 +140,7 @@ class ServerInstaller(InstallerWindow):
 
     def cloudflare_step(self):
         self.page("3 / 4 · Cloudflare",
-                  "Il Quick Tunnel non richiede un account Cloudflare. Il link pubblico apparirà nel programma dopo l'avvio di ComfyUI.")
+                  "Il link pubblico apparirà nel programma dopo l'avvio di ComfyUI.")
         self.button("Verifica cloudflared", self.verify_cloudflared, primary=True)
 
     def verify_cloudflared(self):

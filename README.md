@@ -9,17 +9,17 @@ Pc Server deve avere ComfyUI Portable per Windows, con un batch `run*.bat` e `py
 1. Scarica `install-server.exe` su Pc Server e aprilo con un doppio clic. Windows chiederà l'autorizzazione amministratore.
 2. Nella finestra scegli la cartella di ComfyUI Portable, il batch di avvio e l'utente Windows per SSH. Premi **Installa componenti** e segui l'avanzamento mostrato nella finestra. Verranno preparati OpenSSH Server, Tailscale e `cloudflared`.
 3. Premi **Apri Tailscale**, completa l'accesso nel browser e poi **Verifica accesso**. Usa la stessa tailnet su entrambi i PC. L'installer prova ad abilitare **Run Unattended**; se non riesce, abilitalo dalle preferenze Tailscale.
-4. La schermata Cloudflare spiega che il Quick Tunnel usato dall'app non richiede un account Cloudflare. Premi **Verifica cloudflared**.
+4. Premi **Verifica cloudflared**.
 5. Premi **Salva comfyui-remote-config.json**, scegli dove salvarlo e copialo su Pc User. Il file non contiene password.
 
-L'account Windows di Pc Server deve avere una password utilizzabile via SSH; il PIN di Windows Hello non la sostituisce. Per il Quick Tunnel non serve un account Cloudflare: l'app avvia `cloudflared` soltanto quando premi **Avvia**.
+L'account Windows di Pc Server deve avere una password utilizzabile via SSH; il PIN di Windows Hello non la sostituisce. L'app avvia `cloudflared` quando premi **Avvia**.
 
 ## Installazione su Pc User
 
 1. Scarica `install-user.exe` su Pc User e aprilo con un doppio clic. La finestra mostra l'avanzamento. L'installer include il codice dell'app: non serve clonare il repository.
 2. L'installer prepara Tailscale, Python, le dipendenze dell'app, `run.bat` e un collegamento sul Desktop con l'[icona Icons8](https://icons8.it/icon/rJGwKUDZzg4L/ai).
 3. Premi **Apri Tailscale**, accedi alla stessa tailnet di Pc Server e poi **Verifica accesso**.
-4. Scegli **Importa configurazione**, **Inserisci a mano** oppure **Apri il programma** e compila i dati lì. Inserisci la password SSH nell'app.
+4. Importa la configurazione, inserisci i dati a mano nell'installer oppure chiudilo e inseriscili nel programma dal collegamento sul Desktop. Inserisci la password SSH nel programma.
 
 Per aggiornare una precedente installazione su Pc User, scarica e apri di nuovo `install-user.exe`: l'installer aggiorna i file dell'applicazione e crea il collegamento sul Desktop.
 
