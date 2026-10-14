@@ -2,23 +2,15 @@
 setlocal
 cd /d "%~dp0"
 
-if exist "%~dp0..\.venv\Scripts\pythonw.exe" (
-    start "" "%~dp0..\.venv\Scripts\pythonw.exe" "%~dp0comfyui_remote_manager.py"
-    exit /b 0
-)
+set "COMFY_RUNTIME=%~dp0..\.venv\Scripts"
+if not exist "%COMFY_RUNTIME%\python.exe" set "COMFY_RUNTIME=%~dp0.venv\Scripts"
+if not exist "%COMFY_RUNTIME%\pythonw.exe" goto :repair
+"%COMFY_RUNTIME%\python.exe" -I -c "import tkinter, paramiko, PIL, pyte" >nul 2>&1
+if errorlevel 1 goto :repair
+start "" "%COMFY_RUNTIME%\pythonw.exe" -E -s "%~dp0comfyui_remote_manager.py"
+exit /b 0
 
-where pyw.exe >nul 2>nul
-if not errorlevel 1 (
-    start "" pyw.exe -3 "%~dp0comfyui_remote_manager.py"
-    exit /b 0
-)
-
-where py.exe >nul 2>nul
-if errorlevel 1 (
-    echo Python non trovato. Installa Python 3 e riprova.
-    pause
-    exit /b 1
-)
-
-py.exe -3 "%~dp0comfyui_remote_manager.py"
-if errorlevel 1 pause
+:repair
+echo Run install-client.exe to install or repair ComfyUI Remote Manager.
+pause
+exit /b 1

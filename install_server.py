@@ -7,10 +7,11 @@ import subprocess
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
+from platform_paths import program_data_directory
 
 from installer_common import (FLAGS, InstallerWindow, find_cloudflared, find_tailscale,
                               is_admin, open_tailscale, run_command, tailscale_ip,
-                              resource_path, validate_config, winget_install, write_json)
+                              desktop_directory, resource_path, validate_config, winget_install, write_json)
 
 
 LOCAL_LAUNCHER = "run_nvidia_gpu_close_instances.bat"
@@ -106,7 +107,7 @@ class ServerInstaller(InstallerWindow):
             cloudflared = find_cloudflared()
         if not cloudflared:
             raise RuntimeError("cloudflared installato, ma l'eseguibile non è stato trovato. Riavvia l'installer.")
-        bin_dir = Path(os.environ["PROGRAMDATA"]) / "ComfyUIRemoteManager"
+        bin_dir = program_data_directory() / "ComfyUIRemoteManager"
         bin_dir.mkdir(parents=True, exist_ok=True)
         stable_path = bin_dir / "cloudflared.exe"
         if Path(cloudflared).resolve() != stable_path.resolve():
@@ -186,7 +187,7 @@ class ServerInstaller(InstallerWindow):
         return destination
 
     def save_config(self):
-        desktop = Path.home() / "Desktop"
+        desktop = desktop_directory()
         path = filedialog.asksaveasfilename(parent=self.root, title="Salva configurazione PC Server",
                                              initialdir=str(desktop), initialfile="comfyui-remote-config.json",
                                              defaultextension=".json", filetypes=[("JSON", "*.json")])

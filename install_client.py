@@ -1,12 +1,13 @@
 """Graphical setup wizard for the Windows PC controlling ComfyUI."""
 
 import json
-import os
 import shutil
 import sys
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox
+from platform_paths import local_app_data_directory
+from python_runtime import find_python_executable, venv_is_usable
 
 from installer_common import (InstallerWindow, create_shortcut, desktop_directory, find_tailscale,
                               open_tailscale, resource_path, run_command, tailscale_ip,
@@ -16,7 +17,7 @@ from installer_common import (InstallerWindow, create_shortcut, desktop_director
 class ClientInstaller(InstallerWindow):
     def __init__(self):
         super().__init__("Installa PC Client · ComfyUI Remote Manager")
-        self.install_dir = Path(os.environ["LOCALAPPDATA"]) / "Programs" / "ComfyUIRemoteManager"
+        self.install_dir = local_app_data_directory() / "Programs" / "ComfyUIRemoteManager"
         self.app_dir = self.install_dir / "app"
         self.venv_dir = self.install_dir / ".venv"
         self.language_step(self.intro_step, 4)
@@ -31,14 +32,18 @@ class ClientInstaller(InstallerWindow):
         self.run_async(self.install_components, lambda _result: self.tailscale_step())
 
     def find_python(self):
-        launcher = shutil.which("py.exe")
-        executable = shutil.which("python.exe")
-        if executable and "WindowsApps" in executable:
-            executable = None
-        candidates = [Path(os.environ["LOCALAPPDATA"]) / "Programs" / "Python" / "Python313" / "python.exe",
-                      Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Python313" / "python.exe"]
-        executable = executable or next((str(path) for path in candidates if path.is_file()), None)
-        return launcher, executable
+        return find_python_executable()
+
+    def prepare_environment(self, python):
+        root = self.install_dir.resolve()
+        target = self.venv_dir.resolve()
+        if target.parent != root or target.name != ".venv":
+            raise RuntimeError("Percorso dell'ambiente Python non valido.")
+        if not venv_is_usable(target):
+            self.log("Preparazione dell'ambiente Python...")
+            run_command([python, "-I", "-m", "venv", "--clear", str(target)], self.log)
+        if not venv_is_usable(target):
+            raise RuntimeError("Impossibile preparare un ambiente Python funzionante.")
 
     def install_components(self):
         if not find_tailscale():
@@ -47,18 +52,18 @@ class ClientInstaller(InstallerWindow):
             raise RuntimeError("Tailscale installato, ma l'eseguibile non è stato trovato. Riavvia l'installer.")
         self.log("Tailscale pronto.")
 
-        launcher, python = self.find_python()
-        if not launcher and not python:
+        python = self.find_python()
+        if not python:
             winget_install("Python.Python.3.13", self.log)
-            launcher, python = self.find_python()
-        if not launcher and not python:
+            python = self.find_python()
+        if not python:
             raise RuntimeError("Python installato, ma non trovato. Riavvia l'installer.")
 
         payload = resource_path("payload")
         if not payload.is_dir():
             payload = Path(__file__).parent
         self.app_dir.mkdir(parents=True, exist_ok=True)
-        for name in ("comfyui_remote_manager.py", "download_worker.py", "localization.py", "ui_theme.py", "terminal_display.py",
+        for name in ("comfyui_remote_manager.py", "download_worker.py", "localization.py", "ui_theme.py", "terminal_display.py", "platform_paths.py",
                      "requirements.txt", "run.bat"):
             source = payload / name
             if not source.is_file():
@@ -74,12 +79,9 @@ class ClientInstaller(InstallerWindow):
         self.log("Programma installato.")
 
         venv_python = self.venv_dir / "Scripts" / "python.exe"
-        if not venv_python.is_file():
-            command = [launcher, "-3", "-m", "venv", str(self.venv_dir)] if launcher else \
-                      [python, "-m", "venv", str(self.venv_dir)]
-            run_command(command, self.log)
+        self.prepare_environment(python)
         self.log("Installazione delle dipendenze Python...")
-        run_command([str(venv_python), "-m", "pip", "install", "-r",
+        run_command([str(venv_python), "-I", "-m", "pip", "install", "-r",
                      str(self.app_dir / "requirements.txt")], self.log)
 
         desktop = desktop_directory()
@@ -89,7 +91,7 @@ class ClientInstaller(InstallerWindow):
         self.save_language_preference()
 
     def preferences_path(self):
-        return Path(os.environ["LOCALAPPDATA"]) / "ComfyUIRemoteManager" / "preferences.json"
+        return local_app_data_directory() / "ComfyUIRemoteManager" / "preferences.json"
 
     def save_language_preference(self):
         write_json(self.preferences_path(), {"language": self.language})
@@ -125,7 +127,7 @@ class ClientInstaller(InstallerWindow):
         self.button("Chiudi", self.root.destroy)
 
     def profile_path(self):
-        return Path(os.environ["LOCALAPPDATA"]) / "ComfyUIRemoteManager" / "connection.json"
+        return local_app_data_directory() / "ComfyUIRemoteManager" / "connection.json"
 
     def save_profile(self, config):
         config = validate_config(config)
@@ -156,7 +158,7 @@ class ClientInstaller(InstallerWindow):
         self.comfy_var = self.entry("Cartella ComfyUI Portable su PC Server (es. C:\\ComfyUI)")
         self.batch_var = self.entry("Batch di avvio", "run_nvidia_gpu.bat")
         self.cloudflare_var = self.entry("Percorso cloudflared su PC Server",
-                                        r"C:\ProgramData\ComfyUIRemoteManager\cloudflared.exe")
+                                        "cloudflared")
         self.button("Salva e continua", self.save_manual, primary=True)
         self.button("Indietro", self.choice_step)
 
@@ -184,6 +186,7 @@ if __name__ == "__main__":
         assert (resource_path("payload") / "localization.py").is_file()
         assert (resource_path("payload") / "ui_theme.py").is_file()
         assert (resource_path("payload") / "terminal_display.py").is_file()
+        assert (resource_path("payload") / "platform_paths.py").is_file()
         assert (resource_path("assets") / "ai-icons8.ico").is_file()
         installer.root.destroy()
     else:

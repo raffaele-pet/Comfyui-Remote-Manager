@@ -16,7 +16,7 @@ subprocess.run(base + ["--add-data", f"{root / 'run_nvidia_gpu_close_instances.b
                        "--uac-admin", "--name", "install-server",
                        str(root / "install_server.py")], check=True)
 
-payload = ["comfyui_remote_manager.py", "download_worker.py", "localization.py", "ui_theme.py", "terminal_display.py",
+payload = ["comfyui_remote_manager.py", "download_worker.py", "localization.py", "ui_theme.py", "terminal_display.py", "platform_paths.py",
            "requirements.txt", "run.bat"]
 args = []
 for name in payload:

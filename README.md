@@ -24,6 +24,10 @@ Open **ComfyUI Remote Manager** from the Desktop shortcut. To update an existing
 
 The installers target Windows x64. Installing components and Python packages requires an internet connection and WinGet. The setup wizard source files are `install_server.py`, `install_client.py`, and `installer_common.py`; translations are in `localization.py`.
 
+Installation folders are discovered from the current computer's Windows known folders. The installers contain no personal usernames, addresses, connection profiles, or saved installation paths. PC Server folders come from the selected ComfyUI location and the connected server's Windows profile, including a redirected Desktop. Saved settings belong to the current user's local installation and are not included in the installers.
+
+The PC Client installer tests Python before using it and creates the environment with the validated interpreter directly. Broken launcher registrations are ignored; an unusable app environment is recreated. `run.bat` uses the app's relative environment location and ignores external Python environment variables.
+
 ## Change the ComfyUI folder or Windows user
 
 If ComfyUI is moved or renamed on the PC Server, update **ComfyUI Portable folder** and, if needed, **Startup batch file** in the PC Client app. Select **Save folder and batch file**. The new path is used for start, stop, update, remote file shortcuts, and direct URL downloads. If the PC Server's Windows user changes, update **User** and reconnect.

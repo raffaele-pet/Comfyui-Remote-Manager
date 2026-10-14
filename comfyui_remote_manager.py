@@ -22,6 +22,7 @@ from tkinter import ttk
 from localization import set_active_language, translate, wrap_dialogs
 from ui_theme import configure_dark_theme
 from terminal_display import SSHConsole
+from platform_paths import local_app_data_directory
 
 try:
     from PIL import Image, ImageOps, ImageTk
@@ -133,7 +134,7 @@ THUMBNAIL_MAX_FILE_SIZE = 64 * 1024 * 1024
 REMOTE_TEXT_MAX_FILE_SIZE = 5 * 1024 * 1024
 UPLOAD_FOLDER_EXCLUDED_DIRS = {".git"}
 
-APP_DATA_DIR = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "ComfyUIRemoteManager"
+APP_DATA_DIR = local_app_data_directory() / "ComfyUIRemoteManager"
 CONNECTION_PROFILE_PATH = APP_DATA_DIR / "connection.json"
 LANGUAGE_PREFERENCES_PATH = APP_DATA_DIR / "preferences.json"
 
@@ -220,7 +221,8 @@ class ComfyRemoteManager:
         self._imported_config_pending = False
         saved_password = self.unprotect_password(profile.get("password", ""))
         default_user = profile.get("user", DEFAULT_USER)
-        self.remote_home_path = f"/C:/Users/{default_user}" if default_user else "/"
+        self.remote_home_path = "/"
+        self.remote_desktop_path = None
         self.current_remote_path = self.normalize_sftp_path(profile.get("comfy_dir", "")) or "/"
 
         self.ui_queue = queue.Queue()
@@ -702,7 +704,10 @@ class ComfyRemoteManager:
         self.open_folder(self.remote_home_path)
 
     def open_remote_desktop(self):
-        self.open_folder(posixpath.join(self.remote_home_path.rstrip("/"), "Desktop"))
+        if self.remote_desktop_path:
+            self.open_folder(self.remote_desktop_path)
+        else:
+            messagebox.showwarning("Desktop", "Impossibile trovare la cartella Desktop di PC Server.", parent=self.root)
 
     def open_remote_recycle_bin(self):
         if not self.connected or not self.client:
@@ -1111,6 +1116,7 @@ Write-Output ('RECYCLE_JSON:' + (ConvertTo-Json -InputObject $result -Compress -
                     self.update_buttons()
                 elif kind == "remote_home":
                     self.remote_home_path = args[0]
+                    self.remote_desktop_path = args[1] if len(args) > 1 else None
                 elif kind == "link":
                     self.current_link = args[0]
                     self.link_var.set(args[0] if args[0] else "Nessun link disponibile")
@@ -1214,11 +1220,8 @@ Write-Output ('RECYCLE_JSON:' + (ConvertTo-Json -InputObject $result -Compress -
             self.client = client
             self.sftp = sftp
             self.connected = True
-            try:
-                remote_home = self.normalize_sftp_path(sftp.normalize("."))
-            except Exception:
-                remote_home = f"/C:/Users/{user}"
-            self.enqueue("remote_home", remote_home)
+            remote_home, remote_desktop = self.discover_remote_folders()
+            self.enqueue("remote_home", remote_home, remote_desktop)
             self.save_connection_profile(host, port, user, password, remember_password)
             self.enqueue("connected", True, f"Connesso a {user}@{host}:{port}")
             self.enqueue("output", "Connessione riuscita.")
@@ -1234,6 +1237,33 @@ Write-Output ('RECYCLE_JSON:' + (ConvertTo-Json -InputObject $result -Compress -
             self.enqueue("busy", False)
             self.enqueue("status", "unknown")
             self.enqueue("error_dialog", "Errore connessione", str(e))
+
+    def discover_remote_folders(self):
+        try:
+            home = self.normalize_sftp_path(self.sftp.normalize("."))
+        except Exception:
+            home = "/"
+        desktop = None
+        script = (
+            "$folders = @{ home = [Environment]::GetFolderPath('UserProfile'); "
+            "desktop = [Environment]::GetFolderPath('DesktopDirectory') }; "
+            "Write-Output ('COMFY_FOLDERS:' + (ConvertTo-Json -Compress $folders))"
+        )
+        try:
+            code, output, _error = self.run_command_quiet(self.powershell_encoded_command(script), timeout=10)
+            if code == 0:
+                marker = next(line for line in output.splitlines() if line.startswith("COMFY_FOLDERS:"))
+                folders = json.loads(marker.partition(":")[2])
+                if not isinstance(folders, dict):
+                    return home, desktop
+                if isinstance(folders.get("home"), str) and self.valid_comfy_path(folders["home"]):
+                    home = self.normalize_sftp_path(folders["home"])
+                if isinstance(folders.get("desktop"), str) and self.valid_comfy_path(folders["desktop"]):
+                    desktop = self.normalize_sftp_path(folders["desktop"])
+        except Exception:
+            # Folder discovery is optional; retain the SFTP home if the server cannot answer.
+            pass
+        return home, desktop
 
     def disconnect(self):
         self._stop_monitor = True
@@ -1258,6 +1288,8 @@ Write-Output ('RECYCLE_JSON:' + (ConvertTo-Json -InputObject $result -Compress -
         self.sftp = None
         self.client = None
         self.connected = False
+        self.remote_home_path = "/"
+        self.remote_desktop_path = None
         self.remote_clipboard = None
         self.current_entries = []
         self.icon_selected_index = None
@@ -1558,7 +1590,12 @@ if ($null -ne $LASTEXITCODE) {{ exit $LASTEXITCODE }}
             self.enqueue("output", f"Avvio Cloudflare: tentativo {attempt}/{attempts}...")
             exe = self.ps_literal(self.cloudflared_exe)
             command = self.powershell_encoded_command(
-                f"$exe = {exe}; & $exe tunnel --url http://127.0.0.1:8188"
+                f"$exe = {exe}; "
+                "if ($exe -in @('cloudflared', 'cloudflared.exe')) { "
+                "$installed = Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) "
+                "'ComfyUIRemoteManager\\cloudflared.exe'; "
+                "if (Test-Path -LiteralPath $installed -PathType Leaf) { $exe = $installed } }; "
+                "& $exe tunnel --url http://127.0.0.1:8188"
             )
             self.start_long_running_command(
                 command,
@@ -1769,8 +1806,6 @@ if ($null -ne $LASTEXITCODE) {{ exit $LASTEXITCODE }}
     def normalize_sftp_path(self, path):
         path = path.strip().replace("\\", "/")
         if re.match(r"^[A-Za-z]:/", path):
-            path = "/" + path
-        if path.startswith("C:/"):
             path = "/" + path
         return path.rstrip("/") if len(path) > 4 else path
 

@@ -15,6 +15,7 @@ from tkinter import messagebox, ttk
 
 from localization import set_active_language, translate, wrap_dialogs
 from ui_theme import configure_dark_theme
+from platform_paths import desktop_directory, local_app_data_directory, program_files_directory
 
 
 BG = "#0f1623"
@@ -76,7 +77,7 @@ def winget_install(package_id, log):
 
 
 def find_tailscale():
-    path = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Tailscale" / "tailscale.exe"
+    path = program_files_directory() / "Tailscale" / "tailscale.exe"
     return str(path) if path.is_file() else shutil.which("tailscale.exe")
 
 
@@ -84,11 +85,11 @@ def find_cloudflared():
     command = shutil.which("cloudflared.exe")
     if command:
         return command
-    program_files = Path(os.environ.get("ProgramFiles", r"C:\Program Files"))
+    program_files = program_files_directory()
     path = program_files / "Cloudflare" / "Cloudflared" / "cloudflared.exe"
     if path.is_file():
         return str(path)
-    packages = Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Packages"
+    packages = local_app_data_directory() / "Microsoft" / "WinGet" / "Packages"
     if packages.is_dir():
         return next((str(path) for path in packages.glob("Cloudflare.cloudflared*/**/cloudflared.exe")), None)
     return None
@@ -104,7 +105,7 @@ def tailscale_ip():
 
 
 def open_tailscale():
-    path = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Tailscale" / "tailscale-ipn.exe"
+    path = program_files_directory() / "Tailscale" / "tailscale-ipn.exe"
     if not path.is_file():
         raise RuntimeError("Interfaccia Tailscale non trovata. Aprila dal menu Start.")
     subprocess.Popen([str(path)], creationflags=FLAGS)
@@ -268,13 +269,6 @@ class InstallerWindow:
 
 def is_admin():
     return bool(ctypes.windll.shell32.IsUserAnAdmin())
-
-
-def desktop_directory():
-    path = ctypes.create_unicode_buffer(32768)
-    if ctypes.windll.shell32.SHGetFolderPathW(None, 0x10, None, 0, path) != 0:
-        raise RuntimeError("Impossibile trovare la cartella Desktop di Windows.")
-    return Path(path.value)
 
 
 def create_shortcut(link_path, target, working_directory, icon, arguments=""):
