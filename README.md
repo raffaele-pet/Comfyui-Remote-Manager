@@ -44,9 +44,9 @@ The connection profile is stored on the PC Client at `%LOCALAPPDATA%\ComfyUIRemo
 
 ## Start ComfyUI locally after using it remotely
 
-Download [run_nvidia_gpu.bat](./run_nvidia_gpu.bat) and place it in the ComfyUI Portable folder on the PC Server, replacing the existing launcher. It closes previous ComfyUI instances, verifies that port 8188 is free, and then starts ComfyUI with `--windows-standalone-build --listen 0.0.0.0 --enable-manager --enable-manager-legacy-ui`. Closing an instance interrupts its running jobs.
+Download [run_nvidia_gpu_close_instances.bat](./run_nvidia_gpu_close_instances.bat) and place it alongside `run_nvidia_gpu.bat` in the ComfyUI Portable folder on the PC Server. Use this additional launcher to close previous ComfyUI instances, verify that port 8188 is free, and then start ComfyUI with `--windows-standalone-build --listen 0.0.0.0 --enable-manager --enable-manager-legacy-ui`. Closing an instance interrupts its running jobs.
 
-The launcher uses its own folder, so moving or renaming ComfyUI Portable does not require editing the batch file. It needs no separate cleanup script or Desktop log files. When closing an instance requires administrator permission, a local launch asks for it. Over SSH, a permission error stops startup and appears in the app. If another application owns port 8188, the launcher reports it and stops. Keep **Startup batch file** set to `run_nvidia_gpu.bat` to use the same launcher from the app.
+The launcher uses its own folder, so moving or renaming ComfyUI Portable does not require editing the batch file. It needs no separate cleanup script or Desktop log files. When closing an instance requires administrator permission, a local launch asks for it. Over SSH, a permission error stops startup and appears in the app. If another application owns port 8188, the launcher reports it and stops. To use this additional launcher from the app, set **Startup batch file** to `run_nvidia_gpu_close_instances.bat` and save it.
 
 The temporary `trycloudflare.com` link is public. [Cloudflare describes Quick Tunnels as suitable for testing and development](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/); do not use the link for data that must stay private.
 
