@@ -15,7 +15,7 @@ from installer_common import (FLAGS, InstallerWindow, find_cloudflared, find_tai
 
 class ServerInstaller(InstallerWindow):
     def __init__(self):
-        super().__init__("Installa Pc Server · ComfyUI Remote Manager")
+        super().__init__("Installa PC Server · ComfyUI Remote Manager")
         self.comfy_dir = ""
         self.start_batch = ""
         self.ssh_user = ""
@@ -24,7 +24,7 @@ class ServerInstaller(InstallerWindow):
         self.language_step(self.choose_comfy, 5)
 
     def choose_comfy(self):
-        self.page("2 / 5 · ComfyUI su Pc Server",
+        self.page("2 / 5 · ComfyUI su PC Server",
                   "Seleziona la cartella principale di ComfyUI Portable. Scegli il file batch che lo avvia e l'utente Windows da usare per SSH.")
         self.path_var = self.entry("Cartella ComfyUI Portable")
         browse = tk.Button(self.form, text=self.t("Sfoglia..."), command=self.browse_comfy,
@@ -108,7 +108,7 @@ class ServerInstaller(InstallerWindow):
 
     def tailscale_step(self):
         self.page("3 / 5 · Accesso a Tailscale",
-                  "Apri Tailscale, accedi dal browser e usa la stessa tailnet che userai su Pc User. Torna qui e verifica la connessione.")
+                  "Apri Tailscale, accedi dal browser e usa la stessa tailnet che userai su PC Client. Torna qui e verifica la connessione.")
         self.label("Se l'icona Tailscale non appare, cercala nell'area di notifica di Windows.")
         self.button("Apri Tailscale", self.launch_tailscale)
         self.button("Verifica accesso", self.verify_tailscale, primary=True)
@@ -149,8 +149,8 @@ class ServerInstaller(InstallerWindow):
 
     def save_step(self):
         self.page("5 / 5 · Esporta configurazione",
-                  "Salva il file di configurazione e copialo su Pc User. Contiene indirizzo, utente e percorsi; non contiene password.")
-        self.label("Pc Server: " + self.host)
+                  "Salva il file di configurazione e copialo su PC Client. Contiene indirizzo, utente e percorsi; non contiene password.")
+        self.label("PC Server: " + self.host)
         self.label("Utente SSH: " + self.ssh_user)
         self.label("ComfyUI: " + self.comfy_dir + " · " + self.start_batch)
         self.button("Salva comfyui-remote-config.json", self.save_config, primary=True)
@@ -158,7 +158,7 @@ class ServerInstaller(InstallerWindow):
 
     def save_config(self):
         desktop = Path.home() / "Desktop"
-        path = filedialog.asksaveasfilename(parent=self.root, title="Salva configurazione Pc Server",
+        path = filedialog.asksaveasfilename(parent=self.root, title="Salva configurazione PC Server",
                                              initialdir=str(desktop), initialfile="comfyui-remote-config.json",
                                              defaultextension=".json", filetypes=[("JSON", "*.json")])
         if not path:
@@ -169,7 +169,7 @@ class ServerInstaller(InstallerWindow):
                                   "cloudflared_exe": self.cloudflared_exe})
         write_json(path, config)
         self.log("Configurazione salvata: " + path)
-        messagebox.showinfo("Pc Server pronto", "Copia questo file su Pc User. La password Windows verrà inserita nell'app su Pc User.", parent=self.root)
+        messagebox.showinfo("PC Server pronto", "Copia questo file su PC Client. La password Windows verrà inserita nell'app su PC Client.", parent=self.root)
 
 
 if __name__ == "__main__":

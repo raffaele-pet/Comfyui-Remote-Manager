@@ -20,6 +20,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from localization import set_active_language, translate, wrap_dialogs
+from ui_theme import configure_dark_theme
 
 try:
     from PIL import Image, ImageOps, ImageTk
@@ -35,7 +36,7 @@ except ModuleNotFoundError:
     raise
 
 # =========================================================
-# CONFIGURAZIONE Pc Server
+# CONFIGURAZIONE PC Server
 # =========================================================
 DEFAULT_HOST = ""
 DEFAULT_USER = ""
@@ -181,7 +182,7 @@ class ComfyRemoteManager:
         wrap_dialogs()
         self.root.title("ComfyUI Remote Manager")
         self.root.geometry("1480x820")
-        self.root.minsize(1180, 720)
+        self.root.minsize(1220, 720)
         self.root.configure(bg=BG)
 
         self.client = None
@@ -351,9 +352,9 @@ class ComfyRemoteManager:
 
     def import_remote_config(self):
         if self.connected:
-            messagebox.showwarning("Configurazione", "Disconnetti Pc Server prima di importare un altro profilo.")
+            messagebox.showwarning("Configurazione", "Disconnetti PC Server prima di importare un altro profilo.")
             return
-        path = filedialog.askopenfilename(title="Configurazione esportata da Pc Server",
+        path = filedialog.askopenfilename(title="Configurazione esportata da PC Server",
                                           filetypes=[("JSON", "*.json")], parent=self.root)
         if not path:
             return
@@ -391,7 +392,7 @@ class ComfyRemoteManager:
         self.remember_password_var.set(False)
         self._imported_config_pending = True
         self.update_buttons()
-        self.append_output("Configurazione di Pc Server importata. Inserisci la password SSH e connettiti.")
+        self.append_output("Configurazione di PC Server importata. Inserisci la password SSH e connettiti.")
 
     def t(self, text):
         return translate(text, self.language)
@@ -514,7 +515,7 @@ class ComfyRemoteManager:
     def comfy_root(self):
         path = self.comfy_dir
         if not self.valid_comfy_path(path):
-            raise ValueError("Configura il percorso Windows della cartella ComfyUI Portable su Pc Server.")
+            raise ValueError("Configura il percorso Windows della cartella ComfyUI Portable su PC Server.")
         return path
 
     def comfy_subfolder(self, suffix=""):
@@ -525,17 +526,7 @@ class ComfyRemoteManager:
     # UI SETUP
     # -----------------------------------------------------
     def setup_styles(self):
-        style = ttk.Style()
-        try:
-            style.theme_use("clam")
-        except Exception:
-            pass
-
-        style.configure("Treeview", background=PANEL_2, foreground=TEXT, fieldbackground=PANEL_2,
-                        bordercolor=BORDER, rowheight=24)
-        style.map("Treeview", background=[("selected", "#243b61")], foreground=[("selected", TEXT)])
-        style.configure("Treeview.Heading", background="#1a2636", foreground=TEXT, relief="flat")
-        style.configure("Vertical.TScrollbar", background=PANEL, troughcolor=BG, bordercolor=BORDER, arrowcolor=TEXT)
+        configure_dark_theme(self.root)
 
     def panel(self, parent, title):
         frame = tk.LabelFrame(parent, text=title, bg=PANEL, fg=TEXT, bd=1, relief="solid",
@@ -568,12 +559,48 @@ class ComfyRemoteManager:
             btn.configure(state="disabled", bg=DISABLED_BG, cursor="arrow")
 
     def build_ssh_sidebar(self, parent):
-        sidebar = tk.Frame(parent, bg="#0b1220", width=248, highlightthickness=1, highlightbackground=BORDER)
-        sidebar.pack(side="left", fill="y")
-        sidebar.pack_propagate(False)
+        sidebar_panel = tk.Frame(parent, bg="#0b1220", width=270, highlightthickness=1, highlightbackground=BORDER)
+        sidebar_panel.pack(side="left", fill="y")
+        sidebar_panel.pack_propagate(False)
+
+        preferences = tk.Frame(sidebar_panel, bg="#0b1220")
+        preferences.pack(side="bottom", fill="x", padx=10, pady=12)
+        tk.Label(preferences, text="Lingua", bg="#0b1220", fg=MUTED, anchor="w",
+                 font=("Segoe UI", 8)).pack(fill="x", pady=(0, 4))
+        self.language_select = ttk.Combobox(preferences, textvariable=self.language_choice,
+                                           values=("English", "Italiano"), state="readonly",
+                                           font=("Segoe UI", 9))
+        self.language_select.pack(fill="x")
+        self.language_select.bind("<<ComboboxSelected>>", self.change_language)
+
+        self.sidebar_canvas = tk.Canvas(sidebar_panel, bg="#0b1220", highlightthickness=0, width=268)
+        self.sidebar_canvas.pack(side="left", fill="both", expand=True)
+        self.sidebar_scroll = ttk.Scrollbar(sidebar_panel, orient="vertical", command=self.sidebar_canvas.yview)
+        self.sidebar_canvas.configure(yscrollcommand=self.sidebar_scroll.set)
+        sidebar = tk.Frame(self.sidebar_canvas, bg="#0b1220")
+        sidebar_window = self.sidebar_canvas.create_window((0, 0), window=sidebar, anchor="nw")
+
+        def resize_sidebar(_event=None):
+            self.sidebar_canvas.configure(scrollregion=self.sidebar_canvas.bbox("all"))
+            if sidebar.winfo_reqheight() > self.sidebar_canvas.winfo_height():
+                if not self.sidebar_scroll.winfo_manager():
+                    self.sidebar_scroll.pack(side="right", fill="y", before=self.sidebar_canvas)
+            else:
+                self.sidebar_scroll.pack_forget()
+                self.sidebar_canvas.yview_moveto(0)
+            self.sidebar_canvas.itemconfigure(sidebar_window, width=self.sidebar_canvas.winfo_width())
+
+        sidebar.bind("<Configure>", resize_sidebar)
+        self.sidebar_canvas.bind("<Configure>", resize_sidebar)
+
+        def scroll_sidebar(event):
+            if str(event.widget).startswith(str(sidebar)) and self.sidebar_scroll.winfo_manager():
+                self.sidebar_canvas.yview_scroll(int(-event.delta / 120), "units")
+
+        self.root.bind("<MouseWheel>", scroll_sidebar, add=True)
 
         host_card = tk.Frame(sidebar, bg=PANEL, highlightthickness=1, highlightbackground=BORDER)
-        host_card.pack(fill="x", padx=10, pady=(4, 10))
+        host_card.pack(fill="x", padx=12, pady=(12, 4))
         card_top = tk.Frame(host_card, bg=PANEL)
         card_top.pack(fill="x", padx=10, pady=(9, 3))
         self.connection_status_dot = tk.Canvas(card_top, width=12, height=12, bg=PANEL, highlightthickness=0)
@@ -587,21 +614,13 @@ class ComfyRemoteManager:
         tk.Label(host_card, textvariable=self.host_summary_var, bg=PANEL, fg="#7ea6d8",
                  anchor="w", font=("Consolas", 8)).pack(fill="x", padx=10, pady=(2, 9))
 
+        self.sidebar_section(sidebar, "CONNESSIONE")
         self.sidebar_field(sidebar, "Host / IP Tailscale", self.host_var)
         connection_row = tk.Frame(sidebar, bg="#0b1220")
         connection_row.pack(fill="x", padx=10)
         self.sidebar_field(connection_row, "Utente", self.user_var, side="left", width=15)
         self.sidebar_field(connection_row, "Porta", self.port_var, side="left", width=6)
         self.sidebar_field(sidebar, "Password", self.password_var, show="*")
-        self.sidebar_field(sidebar, "Cartella ComfyUI Portable su Pc Server", self.comfy_path_var)
-        self.sidebar_field(sidebar, "Batch di avvio", self.start_batch_var)
-
-        tk.Label(sidebar, text="Lingua", bg="#0b1220", fg=MUTED, anchor="w",
-                 font=("Segoe UI", 8)).pack(fill="x", padx=10)
-        language_select = ttk.Combobox(sidebar, textvariable=self.language_choice,
-                                       values=("English", "Italiano"), state="readonly")
-        language_select.pack(fill="x", padx=10, pady=(0, 8))
-        language_select.bind("<<ComboboxSelected>>", self.change_language)
 
         remember = tk.Checkbutton(
             sidebar,
@@ -615,16 +634,7 @@ class ComfyRemoteManager:
             highlightthickness=0,
             font=("Segoe UI", 8),
         )
-        remember.pack(anchor="w", padx=10, pady=(0, 8))
-
-        import_button = self.make_button(sidebar, "Importa configurazione Pc Server", self.import_remote_config,
-                                         "#303a49", "#3b4658")
-        import_button.pack(fill="x", padx=10, pady=(0, 8))
-        self.btn_save_path = self.make_button(sidebar, "Salva percorso e batch", self.save_comfy_path,
-                                              "#303a49", "#3b4658")
-        self.btn_save_path.pack(fill="x", padx=10, pady=(0, 8))
-        for variable in (self.comfy_path_var, self.start_batch_var):
-            variable.trace_add("write", lambda *_args: self.update_buttons())
+        remember.pack(anchor="w", padx=10, pady=(0, 6))
 
         button_row = tk.Frame(sidebar, bg="#0b1220")
         button_row.pack(fill="x", padx=10)
@@ -635,25 +645,19 @@ class ComfyRemoteManager:
         )
         self.btn_disconnect.pack(side="left", fill="x", expand=True, padx=(3, 0))
 
-        tk.Frame(sidebar, bg=BORDER, height=1).pack(fill="x", padx=10, pady=14)
-        tk.Label(sidebar, text="FILE REMOTI", bg="#0b1220", fg=MUTED,
-                 anchor="w", font=("Segoe UI", 8, "bold")).pack(fill="x", padx=12, pady=(0, 5))
+        self.sidebar_section(sidebar, "COMFYUI")
+        self.sidebar_field(sidebar, "Cartella ComfyUI Portable", self.comfy_path_var)
+        self.sidebar_field(sidebar, "Batch di avvio", self.start_batch_var)
+        import_button = self.make_button(sidebar, "Importa configurazione PC Server", self.import_remote_config,
+                                         "#303a49", "#3b4658")
+        import_button.pack(fill="x", padx=10, pady=(0, 6))
+        self.btn_save_path = self.make_button(sidebar, "Salva percorso e batch", self.save_comfy_path,
+                                              "#303a49", "#3b4658")
+        self.btn_save_path.pack(fill="x", padx=10, pady=(0, 2))
+        for variable in (self.comfy_path_var, self.start_batch_var):
+            variable.trace_add("write", lambda *_args: self.update_buttons())
 
-        self.sidebar_remote_buttons = []
-        remote_actions = [
-            ("⌂  Home utente", self.open_remote_home),
-            ("▣  Desktop", self.open_remote_desktop),
-            ("♻  Cestino", self.open_remote_recycle_bin),
-        ]
-        for label, command in remote_actions:
-            button = self.make_button(sidebar, label, command, "#172235", "#22314a")
-            button.configure(anchor="w")
-            button.pack(fill="x", padx=10, pady=2)
-            self.sidebar_remote_buttons.append(button)
-
-        tk.Frame(sidebar, bg=BORDER, height=1).pack(fill="x", padx=10, pady=14)
-        tk.Label(sidebar, text="STRUMENTI SSH", bg="#0b1220", fg=MUTED,
-                 anchor="w", font=("Segoe UI", 8, "bold")).pack(fill="x", padx=12, pady=(0, 5))
+        self.sidebar_section(sidebar, "STRUMENTI SSH")
 
         self.btn_ssh_terminal = self.make_button(
             sidebar,
@@ -664,7 +668,7 @@ class ComfyRemoteManager:
         )
         self.btn_ssh_terminal.configure(anchor="w")
         self.btn_ssh_terminal.pack(fill="x", padx=10, pady=2)
-        self.sidebar_remote_buttons.append(self.btn_ssh_terminal)
+        self.remote_navigation_buttons = [self.btn_ssh_terminal]
 
         copy_command = self.make_button(
             sidebar,
@@ -676,14 +680,9 @@ class ComfyRemoteManager:
         copy_command.configure(anchor="w")
         copy_command.pack(fill="x", padx=10, pady=2)
 
-        tk.Label(
-            sidebar,
-            text="La password ricordata è cifrata\ncon la protezione di Windows.",
-            bg="#0b1220",
-            fg="#64748b",
-            justify="left",
-            font=("Segoe UI", 7),
-        ).pack(side="bottom", anchor="w", padx=12, pady=12)
+    def sidebar_section(self, parent, title):
+        tk.Label(parent, text=title, bg="#0b1220", fg="#7ea6d8", anchor="w",
+                 font=("Segoe UI", 8, "bold")).pack(fill="x", padx=12, pady=(12, 5))
 
     def sidebar_field(self, parent, label, variable, show=None, side="top", width=None):
         container = tk.Frame(parent, bg="#0b1220")
@@ -704,7 +703,7 @@ class ComfyRemoteManager:
             width=width,
             font=("Segoe UI", 9),
         )
-        entry.pack(fill="x", ipady=5)
+        entry.pack(fill="x", ipady=4)
         return entry
 
     def refresh_host_summary(self):
@@ -758,7 +757,7 @@ Write-Output ('RECYCLE_JSON:' + (ConvertTo-Json -InputObject $result -Compress -
                 raise RuntimeError((err or out).strip() or "Errore durante la lettura del Cestino.")
             marker = next((line for line in out.splitlines() if line.startswith("RECYCLE_JSON:")), None)
             if marker is None:
-                raise RuntimeError("Pc Server non ha restituito l'elenco del Cestino.")
+                raise RuntimeError("PC Server non ha restituito l'elenco del Cestino.")
             payload = json.loads(marker[len("RECYCLE_JSON:"):])
             if isinstance(payload, dict):
                 payload = [payload]
@@ -816,7 +815,7 @@ Write-Output ('RECYCLE_JSON:' + (ConvertTo-Json -InputObject $result -Compress -
                  font=("Segoe UI", 19, "bold")).pack(anchor="w")
         tk.Label(
             header,
-            text="Avvia ComfyUI, genera il link pubblico e gestisci i file di Pc Server da un'unica finestra.",
+            text="Avvia ComfyUI, genera il link pubblico e gestisci i file di PC Server da un'unica finestra.",
             bg=BG,
             fg=MUTED,
             font=("Segoe UI", 9),
@@ -869,7 +868,7 @@ Write-Output ('RECYCLE_JSON:' + (ConvertTo-Json -InputObject $result -Compress -
         )
         main.pack(fill="both", expand=True, padx=12, pady=(3, 12))
 
-        browser = self.panel(main, "File browser remoto Pc Server")
+        browser = self.panel(main, "File browser remoto PC Server")
         main.add(browser, minsize=650, stretch="always", width=1050, padx=0)
 
         brow_top = tk.Frame(browser, bg=PANEL)
@@ -946,11 +945,25 @@ Write-Output ('RECYCLE_JSON:' + (ConvertTo-Json -InputObject $result -Compress -
         self.btn_go = self.make_button(path_row, "Vai", self.go_to_path, "#303a49", "#3b4658", width=6)
         self.btn_go.pack(side="left")
 
+        tk.Label(browser, text="Collegamenti rapidi PC Server", bg=PANEL, fg=MUTED,
+                 font=("Segoe UI", 9, "bold"), anchor="w").pack(fill="x", pady=(4, 6))
+        self.server_shortcuts = tk.Frame(browser, bg=PANEL)
+        self.server_shortcuts.pack(fill="x", pady=(0, 4))
+        remote_actions = [
+            ("Home utente", self.open_remote_home),
+            ("Desktop", self.open_remote_desktop),
+            ("Cestino", self.open_remote_recycle_bin),
+        ]
+        for index, (label, command) in enumerate(remote_actions):
+            self.server_shortcuts.grid_columnconfigure(index, weight=1, uniform="server")
+            button = self.make_button(self.server_shortcuts, label, command, "#172235", "#22314a")
+            button.grid(row=0, column=index, sticky="ew", padx=(0 if index == 0 else 2, 0 if index == 2 else 2))
+            self.remote_navigation_buttons.append(button)
+
         shortcuts = tk.Frame(browser, bg=PANEL)
         shortcuts.pack(fill="x", pady=(0, 5))
         folder_shortcuts = [
             ("ComfyUI Portable", ""),
-            ("ComfyUI", "ComfyUI"),
             ("custom nodes", "ComfyUI/custom_nodes"),
             ("models", "ComfyUI/models"),
             ("diffusion models", "ComfyUI/models/diffusion_models"),
@@ -962,7 +975,8 @@ Write-Output ('RECYCLE_JSON:' + (ConvertTo-Json -InputObject $result -Compress -
             shortcuts.grid_columnconfigure(index, weight=1)
             b = self.make_button(shortcuts, label, lambda p=suffix: self.open_folder(self.comfy_subfolder(p)),
                                  "#253044", "#303c52")
-            b.grid(row=0, column=index, sticky="ew", padx=(0 if index == 0 else 2, 0 if index == 7 else 2))
+            b.grid(row=0, column=index, sticky="ew", padx=(0 if index == 0 else 2, 0 if index == len(folder_shortcuts) - 1 else 2))
+            self.remote_navigation_buttons.append(b)
 
         self.file_view_area = tk.Frame(browser, bg=PANEL)
         self.file_view_area.pack(fill="both", expand=True)
@@ -1087,7 +1101,7 @@ Write-Output ('RECYCLE_JSON:' + (ConvertTo-Json -InputObject $result -Compress -
 
         self.set_button_enabled(self.btn_connect, not connected and not busy)
         self.set_button_enabled(self.btn_disconnect, connected and not busy)
-        for button in self.sidebar_remote_buttons:
+        for button in self.remote_navigation_buttons:
             self.set_button_enabled(button, connected and not busy)
 
         # Regole richieste.
@@ -1194,7 +1208,7 @@ Write-Output ('RECYCLE_JSON:' + (ConvertTo-Json -InputObject $result -Compress -
             return
         comfy_dir = self.comfy_path_var.get().strip().rstrip("\\/")
         if not self.valid_comfy_path(comfy_dir):
-            messagebox.showwarning("Percorso ComfyUI", "Inserisci la cartella Windows di ComfyUI Portable su Pc Server.")
+            messagebox.showwarning("Percorso ComfyUI", "Inserisci la cartella Windows di ComfyUI Portable su PC Server.")
             return
         start_batch = self.start_batch_var.get().strip()
         if not self.valid_start_batch(start_batch):
@@ -1300,7 +1314,7 @@ Write-Output ('RECYCLE_JSON:' + (ConvertTo-Json -InputObject $result -Compress -
     def run_command(self, command, title=None, timeout=None, stream=False, stop_on_done=False,
                     input_data=None, display_command=None):
         if not self.ensure_connected():
-            raise RuntimeError("Non connesso a Pc Server.")
+            raise RuntimeError("Non connesso a PC Server.")
 
         if title:
             self.enqueue("output", f"\n=== {title} ===")
@@ -1393,7 +1407,7 @@ Write-Output ('RECYCLE_JSON:' + (ConvertTo-Json -InputObject $result -Compress -
 
     def run_command_quiet(self, command, timeout=None):
         if not self.ensure_connected():
-            raise RuntimeError("Non connesso a Pc Server.")
+            raise RuntimeError("Non connesso a PC Server.")
         stdin, stdout, stderr = self.client.exec_command(command, get_pty=False, timeout=timeout)
         out = stdout.read().decode("utf-8", errors="replace")
         err = stderr.read().decode("utf-8", errors="replace")
@@ -1415,7 +1429,7 @@ Write-Output ('RECYCLE_JSON:' + (ConvertTo-Json -InputObject $result -Compress -
 
     def start_long_running_command(self, command, title, channel_attr, on_url=False, display_command=None):
         if not self.ensure_connected():
-            raise RuntimeError("Non connesso a Pc Server.")
+            raise RuntimeError("Non connesso a PC Server.")
         self.enqueue("output", f"\n=== {title} ===")
         self.enqueue("output", f"> {self.command_for_display(command, display_command)}")
         transport = self.client.get_transport()
@@ -1547,7 +1561,7 @@ if ($null -ne $LASTEXITCODE) {{ exit $LASTEXITCODE }}
         command = self.powershell_encoded_command(script)
         code, out, _err = self.run_command_quiet(command, timeout=10)
         if code != 0:
-            raise RuntimeError("Impossibile verificare i processi cloudflared su Pc Server.")
+            raise RuntimeError("Impossibile verificare i processi cloudflared su PC Server.")
         for line in reversed(out.splitlines()):
             try:
                 return int(line.strip())
@@ -2197,7 +2211,7 @@ if ($null -ne $LASTEXITCODE) {{ exit $LASTEXITCODE }}
                     menu.add_command(label="Anteprima", command=lambda current=item: self.preview_remote_image(current))
                 elif self.is_text_file(item["name"]):
                     menu.add_command(label="Apri / modifica", command=lambda current=item: self.edit_remote_text_file(current))
-                menu.add_command(label="Scarica su Pc User...", command=self.download_selected_file)
+                menu.add_command(label="Scarica su PC Client...", command=self.download_selected_file)
                 menu.add_separator()
             menu.add_command(label="Rinomina", command=self.rename_selected_item)
             menu.add_command(label="Copia", command=lambda: self.set_remote_clipboard("copy"))
@@ -2547,7 +2561,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
             return
         suffix = Path(item["name"]).suffix
         local_path = filedialog.asksaveasfilename(
-            title="Scarica file da Pc Server",
+            title="Scarica file da PC Server",
             initialfile=item["name"],
             defaultextension=suffix,
             filetypes=[("Tutti i file", "*.*")],
@@ -2576,7 +2590,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
             last_report_percent = -1
 
             self.enqueue("output", f"Download SFTP:\n{item['path']}\n→ {local_path}")
-            self.enqueue("upload_progress", 0.0, "Download su Pc User: 0%")
+            self.enqueue("upload_progress", 0.0, "Download su PC Client: 0%")
 
             with download_sftp.open(item["path"], "rb") as remote_file:
                 with open(partial_path, "wb") as local_file:
@@ -2596,7 +2610,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
                             remaining = max(total - transferred, 0)
                             eta = self.format_seconds(remaining / speed) if speed > 0 else "—"
                             text = (
-                                f"Download su Pc User: {percent:.1f}%  "
+                                f"Download su PC Client: {percent:.1f}%  "
                                 f"{self.format_size(transferred)} / {self.format_size(total)}  "
                                 f"{self.format_size(speed)}/s  ETA {eta}"
                             )
@@ -2605,17 +2619,17 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
                             last_report_percent = rounded_percent
 
             os.replace(partial_path, local_path)
-            self.enqueue("upload_progress", 100.0, "Download su Pc User completato")
+            self.enqueue("upload_progress", 100.0, "Download su PC Client completato")
             self.enqueue("output", f"Download completato: {local_path}")
-            self.enqueue("info_dialog", "Download completato", f"File salvato su Pc User:\n{local_path}")
+            self.enqueue("info_dialog", "Download completato", f"File salvato su PC Client:\n{local_path}")
         except Exception as e:
             try:
                 if partial_path.exists():
                     partial_path.unlink()
             except Exception:
                 pass
-            self.enqueue("upload_progress", 0.0, "Download su Pc User fallito")
-            self.enqueue("error_dialog", "Errore download su Pc User", str(e))
+            self.enqueue("upload_progress", 0.0, "Download su PC Client fallito")
+            self.enqueue("error_dialog", "Errore download su PC Client", str(e))
         finally:
             if download_sftp:
                 try:
@@ -2642,7 +2656,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
         window.configure(bg=BG)
         label = tk.Label(
             window,
-            text="Caricamento anteprima da Pc Server...",
+            text="Caricamento anteprima da PC Server...",
             bg=PANEL_2,
             fg=MUTED,
             font=("Segoe UI", 10),
@@ -2712,7 +2726,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
         if item.get("raw_size", 0) > REMOTE_TEXT_MAX_FILE_SIZE:
             messagebox.showwarning(
                 "File troppo grande",
-                "L'editor remoto apre file di testo fino a 5 MB. Puoi comunque scaricarlo su Pc User.",
+                "L'editor remoto apre file di testo fino a 5 MB. Puoi comunque scaricarlo su PC Client.",
             )
             return
 
@@ -2724,7 +2738,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
             "loading": True,
         }
         window = editor["window"]
-        window.title(f"Editor remoto Pc Server - {item['name']}")
+        window.title(f"Editor remoto PC Server - {item['name']}")
         window.geometry("1000x680")
         window.minsize(700, 450)
         window.configure(bg=BG)
@@ -2736,7 +2750,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
                  font=("Consolas", 9)).pack(side="left", fill="x", expand=True, padx=10, pady=9)
         save_button = self.make_button(
             toolbar,
-            "Salva su Pc Server",
+            "Salva su PC Server",
             lambda: self.save_remote_text(editor),
             GREEN,
             GREEN_HOVER,
@@ -2776,7 +2790,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
         text_widget.configure(yscrollcommand=vertical.set, xscrollcommand=horizontal.set, state="disabled")
         editor["text"] = text_widget
 
-        status_var = LocalizedStringVar(window, "Caricamento dal Pc Server...", self.t)
+        status_var = LocalizedStringVar(window, "Caricamento dal PC Server...", self.t)
         self._localized_vars.append(status_var)
         editor["status_var"] = status_var
         tk.Label(window, textvariable=status_var, bg=BG, fg=MUTED, anchor="w",
@@ -2827,7 +2841,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
         editor["encoding"] = encoding
         editor["dirty"] = False
         editor["loading"] = False
-        editor["status_var"].set(f"Caricato da Pc Server · {encoding} · {len(content):,} caratteri")
+        editor["status_var"].set(f"Caricato da PC Server · {encoding} · {len(content):,} caratteri")
         self.set_button_enabled(editor["save_button"], True)
         text_widget.focus_set()
 
@@ -2845,7 +2859,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
         if editor.get("loading") or not self.ensure_connected():
             return
         content = editor["text"].get("1.0", "end-1c")
-        editor["status_var"].set("Salvataggio su Pc Server...")
+        editor["status_var"].set("Salvataggio su PC Server...")
         self.set_button_enabled(editor["save_button"], False)
         threading.Thread(
             target=self._save_remote_text_thread,
@@ -2875,7 +2889,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
         if not window or not window.winfo_exists():
             return
         editor["dirty"] = False
-        editor["status_var"].set(f"Salvato su Pc Server · {time.strftime('%H:%M:%S')}")
+        editor["status_var"].set(f"Salvato su PC Server · {time.strftime('%H:%M:%S')}")
         self.set_button_enabled(editor["save_button"], True)
         self.refresh_folder()
 
@@ -2896,7 +2910,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
         ):
             return
         editor["loading"] = True
-        editor["status_var"].set("Ricaricamento dal Pc Server...")
+        editor["status_var"].set("Ricaricamento dal PC Server...")
         self.set_button_enabled(editor["save_button"], False)
         threading.Thread(target=self._load_remote_text_thread, args=(editor,), daemon=True).start()
 
@@ -2921,7 +2935,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
         }
         self.terminal_sessions.append(terminal)
         window = terminal["window"]
-        window.title(f"SSH pc-lavoro - {remote_path}")
+        window.title(f"SSH PC Server - {remote_path}")
         window.geometry("900x560")
         window.minsize(650, 400)
         window.configure(bg=BG)
@@ -3089,7 +3103,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
 
         url = simpledialog.askstring(
             "Scarica modello da URL",
-            "Incolla il link diretto di download.\nIl download partirà direttamente da Pc Server nella cartella remota attuale.",
+            "Incolla il link diretto di download.\nIl download partirà direttamente da PC Server nella cartella remota attuale.",
             parent=self.root,
         )
         if not url:
@@ -3098,7 +3112,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
 
         filename = simpledialog.askstring(
             "Nome file opzionale",
-            "Nome file da salvare su Pc Server.\nLascia vuoto per usare il nome proposto dal server/link.",
+            "Nome file da salvare su PC Server.\nLascia vuoto per usare il nome proposto dal server/link.",
             parent=self.root,
         )
         filename = (filename or "").strip()
@@ -3122,7 +3136,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
 
     def _download_url_thread(self, url, dest_dir_win, filename, token):
         try:
-            self.enqueue("output", f"Download diretto su Pc Server in {dest_dir_win}")
+            self.enqueue("output", f"Download diretto su PC Server in {dest_dir_win}")
             self.enqueue("upload_progress", 0.0, "Download remoto: preparazione...")
             cfg = {
                 "url": url,
@@ -3135,7 +3149,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
             python_exe = self.ps_literal(self.comfy_root() + r"\python_embeded\python.exe")
             script = f"$python = {python_exe}; & $python -u -c 'import sys;exec(sys.stdin.read())'"
             command = self.powershell_encoded_command(script)
-            code, out, err = self.run_command(command, title="DOWNLOAD DIRETTO SU Pc Server",
+            code, out, err = self.run_command(command, title="DOWNLOAD DIRETTO SU PC Server",
                                               stream=True, timeout=None, input_data=payload,
                                               display_command="Python integrato di ComfyUI: download in memoria")
 
@@ -3166,7 +3180,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
     def upload_file(self):
         if not self.connected or not self.sftp:
             return
-        local_path = filedialog.askopenfilename(title="Scegli file da caricare su Pc Server", parent=self.root)
+        local_path = filedialog.askopenfilename(title="Scegli file da caricare su PC Server", parent=self.root)
         if not local_path:
             return
         remote_path = self.current_remote_path.rstrip("/") + "/" + Path(local_path).name
@@ -3184,7 +3198,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
     def upload_folder(self):
         if not self.connected or not self.sftp:
             return
-        local_path = filedialog.askdirectory(title="Scegli cartella da caricare su Pc Server", parent=self.root)
+        local_path = filedialog.askdirectory(title="Scegli cartella da caricare su PC Server", parent=self.root)
         if not local_path:
             return
         folder_name = Path(local_path).name or "cartella"
@@ -3228,7 +3242,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
         except Exception as e:
             messagebox.showerror(
                 "Controllo destinazione fallito",
-                f"Non riesco a controllare se esiste già un elemento con lo stesso nome su Pc Server:\n\n{remote_path}\n\n{e}",
+                f"Non riesco a controllare se esiste già un elemento con lo stesso nome su PC Server:\n\n{remote_path}\n\n{e}",
                 parent=self.root,
             )
             return None
@@ -3251,14 +3265,14 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
         if not messagebox.askyesno(
             "Elemento già presente",
             (
-                f"Su Pc Server esiste già un/a {existing_kind} con lo stesso nome.\n\n"
+                f"Su PC Server esiste già un/a {existing_kind} con lo stesso nome.\n\n"
                 f"Stai caricando un/a {upload_kind} in:\n{remote_path}\n\n"
                 f"Vuoi sostituire?\n\n{action}"
             ),
             icon="warning",
             parent=self.root,
         ):
-            self.append_output(f"Upload annullato: elemento già presente su Pc Server: {remote_path}")
+            self.append_output(f"Upload annullato: elemento già presente su PC Server: {remote_path}")
             return None
 
         return True
@@ -3362,7 +3376,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
             existing = self.remote_item_info(upload_sftp, remote_path)
             if existing:
                 if not replace_existing:
-                    raise RuntimeError(f"Su Pc Server esiste gia' un elemento con questo nome: {remote_path}")
+                    raise RuntimeError(f"Su PC Server esiste gia' un elemento con questo nome: {remote_path}")
                 self.enqueue("output", f"Sostituisco elemento remoto esistente: {remote_path}")
                 self.remove_remote_item(upload_sftp, remote_path)
 
@@ -3437,7 +3451,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
             existing = self.remote_item_info(upload_sftp, remote_path)
             if existing:
                 if not replace_existing:
-                    raise RuntimeError(f"Su Pc Server esiste gia' un elemento con questo nome: {remote_path}")
+                    raise RuntimeError(f"Su PC Server esiste gia' un elemento con questo nome: {remote_path}")
                 self.enqueue("output", f"Sostituisco elemento remoto esistente: {remote_path}")
                 self.remove_remote_item(upload_sftp, remote_path)
 

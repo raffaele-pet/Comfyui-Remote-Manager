@@ -14,6 +14,7 @@ from pathlib import Path
 from tkinter import messagebox, ttk
 
 from localization import set_active_language, translate, wrap_dialogs
+from ui_theme import configure_dark_theme
 
 
 BG = "#0f1623"
@@ -144,6 +145,7 @@ class InstallerWindow:
         set_active_language(self.language)
         wrap_dialogs()
         self.root = tk.Tk()
+        configure_dark_theme(self.root)
         self.root.title(self.t(title))
         self.root.geometry("790x620")
         self.root.minsize(690, 560)

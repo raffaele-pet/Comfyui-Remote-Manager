@@ -13,16 +13,16 @@ from installer_common import (InstallerWindow, create_shortcut, desktop_director
                               validate_config, winget_install, write_json)
 
 
-class UserInstaller(InstallerWindow):
+class ClientInstaller(InstallerWindow):
     def __init__(self):
-        super().__init__("Installa Pc User · ComfyUI Remote Manager")
+        super().__init__("Installa PC Client · ComfyUI Remote Manager")
         self.install_dir = Path(os.environ["LOCALAPPDATA"]) / "Programs" / "ComfyUIRemoteManager"
         self.app_dir = self.install_dir / "app"
         self.venv_dir = self.install_dir / ".venv"
         self.language_step(self.intro_step, 4)
 
     def intro_step(self):
-        self.page("2 / 4 · Installa su Pc User",
+        self.page("2 / 4 · Installa su PC Client",
                   "Installa ComfyUI Remote Manager e i componenti necessari.")
         self.label("Cartella di installazione: " + str(self.install_dir))
         self.button("Avvia installazione", self.start_install, primary=True)
@@ -58,7 +58,7 @@ class UserInstaller(InstallerWindow):
         if not payload.is_dir():
             payload = Path(__file__).parent
         self.app_dir.mkdir(parents=True, exist_ok=True)
-        for name in ("comfyui_remote_manager.py", "download_worker.py", "localization.py",
+        for name in ("comfyui_remote_manager.py", "download_worker.py", "localization.py", "ui_theme.py",
                      "requirements.txt", "run.bat"):
             source = payload / name
             if not source.is_file():
@@ -89,7 +89,7 @@ class UserInstaller(InstallerWindow):
 
     def tailscale_step(self):
         self.page("3 / 4 · Accesso a Tailscale",
-                  "Apri Tailscale e accedi con la stessa tailnet usata su Pc Server. Torna qui e verifica la connessione prima di configurare l'app.")
+                  "Apri Tailscale e accedi con la stessa tailnet usata su PC Server. Torna qui e verifica la connessione prima di configurare l'app.")
         self.button("Apri Tailscale", self.launch_tailscale)
         self.button("Verifica accesso", self.verify_tailscale, primary=True)
 
@@ -111,7 +111,7 @@ class UserInstaller(InstallerWindow):
         return ip
 
     def choice_step(self):
-        self.page("4 / 4 · Configura Pc Server",
+        self.page("4 / 4 · Configura PC Server",
                   "Importa la configurazione, inserisci i dati a mano qui oppure direttamente nel programma.")
         self.button("Importa configurazione", self.import_config, primary=True)
         self.button("Inserisci a mano", self.manual_step)
@@ -130,7 +130,7 @@ class UserInstaller(InstallerWindow):
         self.ready_step()
 
     def import_config(self):
-        path = filedialog.askopenfilename(parent=self.root, title="Configurazione di Pc Server",
+        path = filedialog.askopenfilename(parent=self.root, title="Configurazione di PC Server",
                                           filetypes=[("JSON", "*.json")])
         if not path:
             return
@@ -142,13 +142,13 @@ class UserInstaller(InstallerWindow):
 
     def manual_step(self):
         self.page("4 / 4 · Inserimento manuale",
-                  "Inserisci i dati di Pc Server.")
-        self.host_var = self.entry("Host o IP Tailscale di Pc Server")
-        self.user_var = self.entry("Utente Windows di Pc Server")
+                  "Inserisci i dati di PC Server.")
+        self.host_var = self.entry("Host o IP Tailscale di PC Server")
+        self.user_var = self.entry("Utente Windows di PC Server")
         self.port_var = self.entry("Porta SSH", "22")
-        self.comfy_var = self.entry("Cartella ComfyUI Portable su Pc Server (es. C:\\ComfyUI)")
+        self.comfy_var = self.entry("Cartella ComfyUI Portable su PC Server (es. C:\\ComfyUI)")
         self.batch_var = self.entry("Batch di avvio", "run_nvidia_gpu.bat")
-        self.cloudflare_var = self.entry("Percorso cloudflared su Pc Server",
+        self.cloudflare_var = self.entry("Percorso cloudflared su PC Server",
                                         r"C:\ProgramData\ComfyUIRemoteManager\cloudflared.exe")
         self.button("Salva e continua", self.save_manual, primary=True)
         self.button("Indietro", self.choice_step)
@@ -165,16 +165,17 @@ class UserInstaller(InstallerWindow):
 
     def ready_step(self):
         self.page("Installazione completata",
-                  "Apri ComfyUI Remote Manager dal Desktop e connettiti a Pc Server.")
+                  "Apri ComfyUI Remote Manager dal Desktop e connettiti a PC Server.")
         self.button("Chiudi", self.root.destroy)
 
 
 if __name__ == "__main__":
-    installer = UserInstaller()
+    installer = ClientInstaller()
     if "--self-test" in sys.argv:
         installer.root.withdraw()
         assert (resource_path("payload") / "comfyui_remote_manager.py").is_file()
         assert (resource_path("payload") / "localization.py").is_file()
+        assert (resource_path("payload") / "ui_theme.py").is_file()
         assert (resource_path("assets") / "ai-icons8.ico").is_file()
         installer.root.destroy()
     else:
