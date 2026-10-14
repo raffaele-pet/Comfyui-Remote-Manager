@@ -86,6 +86,13 @@ class ClientInstaller(InstallerWindow):
         create_shortcut(desktop / "ComfyUI Remote Manager.lnk",
                         self.app_dir / "run.bat", self.app_dir, icon_target)
         self.log("Collegamento sul Desktop creato.")
+        self.save_language_preference()
+
+    def preferences_path(self):
+        return Path(os.environ["LOCALAPPDATA"]) / "ComfyUIRemoteManager" / "preferences.json"
+
+    def save_language_preference(self):
+        write_json(self.preferences_path(), {"language": self.language})
 
     def tailscale_step(self):
         self.page("3 / 4 · Accesso a Tailscale",

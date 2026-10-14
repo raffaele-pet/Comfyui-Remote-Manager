@@ -2,7 +2,7 @@
 
 ComfyUI Remote Manager is a Windows desktop app for running and managing ComfyUI Portable on another computer. The **PC Server** hosts ComfyUI; the **PC Client** runs this app. They connect through Tailscale and SSH. Starting ComfyUI also starts a Cloudflare Quick Tunnel and displays its public link in the app.
 
-Both installers and the app support English and Italian. English is the default. Each installer asks for a language before setup begins. In the app, change **Language** in the left sidebar; the choice is saved immediately for future launches.
+Both installers and the app support English and Italian. Each installer asks for a language before setup begins, with English selected by default. The PC Client installer sets the app's initial language to your selection. In the app, change **Language** in the left sidebar; the choice is saved immediately for future launches. When running the app directly without an installer or saved preference, English is the default.
 
 ## Install the PC Server
 
@@ -38,15 +38,15 @@ The connection profile is stored on the PC Client at `%LOCALAPPDATA%\ComfyUIRemo
 - Start Cloudflare and display the public link in the app.
 - Browse files over SFTP; upload, download, preview, rename, move, and delete them.
 - Download a URL directly on the PC Server without installing a persistent helper there.
-- Use a persistent SSH PowerShell terminal and edit remote text files.
+- Use an SSH PowerShell terminal and edit remote text files. Press Enter to run a command and Ctrl+C to interrupt it; Ctrl+C copies text when a selection is active.
 
-**PC Server shortcuts** has two rows: User home, Desktop, and Recycle Bin; then ComfyUI Portable, custom nodes, models, diffusion models, text encoders, vae, and loras. The sidebar groups connection settings, ComfyUI settings, SSH tools, and language selection. The names **PC Server** and **PC Client** stay the same in both languages.
+**PC Server shortcuts** has two rows: User home, Desktop, and Recycle Bin; then ComfyUI Portable, custom nodes, models, diffusion models, text encoders, vae, and loras. The sidebar groups connection settings, ComfyUI settings, and language selection. Open the terminal from the file browser toolbar. The names **PC Server** and **PC Client** stay the same in both languages.
 
 ## Start ComfyUI locally after using it remotely
 
 Download [run_nvidia_gpu_close_instances.bat](./run_nvidia_gpu_close_instances.bat) and place it alongside `run_nvidia_gpu.bat` in the ComfyUI Portable folder on the PC Server. Use this additional launcher to close previous ComfyUI instances, verify that port 8188 is free, and then start ComfyUI with `--windows-standalone-build --listen 0.0.0.0 --enable-manager --enable-manager-legacy-ui`. Closing an instance interrupts its running jobs.
 
-The launcher uses its own folder, so moving or renaming ComfyUI Portable does not require editing the batch file. It needs no separate cleanup script or Desktop log files. When closing an instance requires administrator permission, a local launch asks for it. Over SSH, a permission error stops startup and appears in the app. If another application owns port 8188, the launcher reports it and stops. To use this additional launcher from the app, set **Startup batch file** to `run_nvidia_gpu_close_instances.bat` and save it.
+The launcher uses its own folder, so moving or renaming ComfyUI Portable does not require editing the batch file. A local launch opens `http://127.0.0.1:8188` in the default browser when ComfyUI is ready, including when cleanup needs administrator permission. Over SSH, the browser stays closed on the PC Server. It needs no separate cleanup script or Desktop log files. When closing an instance requires administrator permission, a local launch asks for it. Over SSH, a permission error stops startup and appears in the app. If another application owns port 8188, the launcher reports it and stops. To use this additional launcher from the app, set **Startup batch file** to `run_nvidia_gpu_close_instances.bat` and save it.
 
 The temporary `trycloudflare.com` link is public. [Cloudflare describes Quick Tunnels as suitable for testing and development](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/); do not use the link for data that must stay private.
 

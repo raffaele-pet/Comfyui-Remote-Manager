@@ -418,6 +418,8 @@ class ComfyRemoteManager:
         except OSError as error:
             messagebox.showerror("Errore", str(error), parent=self.root)
         self.apply_language()
+        self.language_select.selection_clear()
+        self.root.after_idle(self.language_select.selection_clear)
 
     def localize_new_widgets(self):
         if self.root.winfo_exists():
@@ -569,7 +571,7 @@ class ComfyRemoteManager:
                  font=("Segoe UI", 8)).pack(fill="x", pady=(0, 4))
         self.language_select = ttk.Combobox(preferences, textvariable=self.language_choice,
                                            values=("English", "Italiano"), state="readonly",
-                                           font=("Segoe UI", 9))
+                                           exportselection=False, font=("Segoe UI", 9))
         self.language_select.pack(fill="x")
         self.language_select.bind("<<ComboboxSelected>>", self.change_language)
 
@@ -657,28 +659,7 @@ class ComfyRemoteManager:
         for variable in (self.comfy_path_var, self.start_batch_var):
             variable.trace_add("write", lambda *_args: self.update_buttons())
 
-        self.sidebar_section(sidebar, "STRUMENTI SSH")
-
-        self.btn_ssh_terminal = self.make_button(
-            sidebar,
-            ">_  Terminale PowerShell",
-            lambda: self.open_remote_terminal(self.remote_home_path),
-            GREEN,
-            GREEN_HOVER,
-        )
-        self.btn_ssh_terminal.configure(anchor="w")
-        self.btn_ssh_terminal.pack(fill="x", padx=10, pady=2)
-        self.remote_navigation_buttons = [self.btn_ssh_terminal]
-
-        copy_command = self.make_button(
-            sidebar,
-            "⧉  Copia comando SSH",
-            self.copy_ssh_command,
-            "#303a49",
-            "#3b4658",
-        )
-        copy_command.configure(anchor="w")
-        copy_command.pack(fill="x", padx=10, pady=2)
+        self.remote_navigation_buttons = []
 
     def sidebar_section(self, parent, title):
         tk.Label(parent, text=title, bg="#0b1220", fg="#7ea6d8", anchor="w",
@@ -788,17 +769,6 @@ Write-Output ('RECYCLE_JSON:' + (ConvertTo-Json -InputObject $result -Compress -
             if self.connected:
                 self.enqueue("output", f"Impossibile aprire il Cestino: {error}")
                 self.enqueue("error_dialog", "Errore Cestino", str(error))
-
-    def copy_ssh_command(self):
-        host = self.host_var.get().strip()
-        user = self.user_var.get().strip()
-        port = self.port_var.get().strip() or "22"
-        if not host or not user:
-            return
-        command = f"ssh -p {port} {user}@{host}"
-        self.root.clipboard_clear()
-        self.root.clipboard_append(command)
-        self.append_output(f"Comando copiato: {command}")
 
     def build_ui(self):
         shell = tk.Frame(self.root, bg=BG)
@@ -2943,7 +2913,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
 
         tk.Label(
             window,
-            text=f"PowerShell SSH persistente · {self.user_var.get()}@{self.host_var.get()} · {remote_path}",
+            text=f"PowerShell SSH · {self.user_var.get()}@{self.host_var.get()} · {remote_path}",
             bg=BG,
             fg=TEXT,
             anchor="w",
@@ -2981,27 +2951,8 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
         )
         entry.pack(side="left", fill="x", expand=True, padx=(8, 8), ipady=8)
         terminal["entry"] = entry
-        run_button = self.make_button(
-            command_row,
-            "Esegui",
-            lambda: self.run_terminal_command(terminal),
-            GREEN,
-            GREEN_HOVER,
-            width=10,
-        )
-        run_button.pack(side="right")
-        terminal["run_button"] = run_button
         entry.bind("<Return>", lambda _event: self.run_terminal_command(terminal))
-        interrupt_button = self.make_button(
-            command_row,
-            "Ctrl+C",
-            lambda: self.interrupt_remote_terminal(terminal),
-            RED,
-            RED_HOVER,
-            width=7,
-        )
-        interrupt_button.pack(side="right", padx=(0, 6))
-        terminal["interrupt_button"] = interrupt_button
+        window.bind("<Control-c>", lambda event: self.terminal_control_c(terminal, event))
         entry.focus_set()
 
         try:
@@ -3013,8 +2964,17 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
             threading.Thread(target=self._terminal_reader_thread, args=(terminal,), daemon=True).start()
         except Exception as error:
             self.append_terminal_output(terminal, f"Impossibile aprire il terminale SSH: {error}\n")
-            self.set_button_enabled(run_button, False)
-            self.set_button_enabled(interrupt_button, False)
+            terminal["closed"] = True
+            entry.configure(state="disabled")
+
+    def terminal_control_c(self, terminal, event):
+        widget = event.widget
+        if isinstance(widget, tk.Entry) and widget.selection_present():
+            return
+        if isinstance(widget, tk.Text) and widget.tag_ranges("sel"):
+            return
+        self.interrupt_remote_terminal(terminal)
+        return "break"
 
     def run_terminal_command(self, terminal):
         if terminal.get("closed") or not self.ensure_connected():
@@ -3088,8 +3048,8 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
         if not window or not window.winfo_exists():
             return
         self.append_terminal_output(terminal, "\n[Sessione SSH chiusa]\n")
-        self.set_button_enabled(terminal["run_button"], False)
-        self.set_button_enabled(terminal["interrupt_button"], False)
+        terminal["closed"] = True
+        terminal["entry"].configure(state="disabled")
 
     def sftp_to_windows_path(self, path):
         path = self.normalize_sftp_path(path)
