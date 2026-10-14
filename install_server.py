@@ -10,7 +10,15 @@ from tkinter import filedialog, messagebox, ttk
 
 from installer_common import (FLAGS, InstallerWindow, find_cloudflared, find_tailscale,
                               is_admin, open_tailscale, run_command, tailscale_ip,
-                              validate_config, winget_install, write_json)
+                              resource_path, validate_config, winget_install, write_json)
+
+
+LOCAL_LAUNCHER = "run_nvidia_gpu_close_instances.bat"
+LOCAL_LAUNCHER_NOTICE = (
+    "Nella cartella iniziale di ComfyUI viene aggiunto automaticamente run_nvidia_gpu_close_instances.bat.\n\n"
+    "Usalo per avviare ComfyUI da PC Server quando è ancora in esecuzione da PC Client: "
+    "chiude le istanze aperte e riavvia ComfyUI."
+)
 
 
 class ServerInstaller(InstallerWindow):
@@ -148,13 +156,34 @@ class ServerInstaller(InstallerWindow):
                        lambda _result: self.save_step())
 
     def save_step(self):
+        try:
+            self.install_local_launcher()
+        except (OSError, RuntimeError) as error:
+            messagebox.showerror("Installazione", str(error), parent=self.root)
+            self.page("Installazione", "Impossibile aggiungere il launcher nella cartella ComfyUI.")
+            self.button("Riprova", self.save_step, primary=True)
+            self.button("Chiudi", self.root.destroy)
+            return
         self.page("5 / 5 · Esporta configurazione",
                   "Salva il file di configurazione e copialo su PC Client. Contiene indirizzo, utente e percorsi; non contiene password.")
+        self.log_text.configure(height=4)
         self.label("PC Server: " + self.host)
         self.label("Utente SSH: " + self.ssh_user)
         self.label("ComfyUI: " + self.comfy_dir + " · " + self.start_batch)
+        self.label(LOCAL_LAUNCHER_NOTICE)
         self.button("Salva comfyui-remote-config.json", self.save_config, primary=True)
         self.button("Chiudi", self.root.destroy)
+
+    def install_local_launcher(self):
+        source = resource_path(LOCAL_LAUNCHER)
+        destination = Path(self.comfy_dir) / LOCAL_LAUNCHER
+        if not self.comfy_dir or not Path(self.comfy_dir).is_dir():
+            raise RuntimeError("La cartella ComfyUI selezionata non è più disponibile.")
+        if not source.is_file():
+            raise RuntimeError("File incluso nell'installer non trovato: " + LOCAL_LAUNCHER)
+        if source.resolve() != destination.resolve():
+            shutil.copy2(source, destination)
+        return destination
 
     def save_config(self):
         desktop = Path.home() / "Desktop"
@@ -169,7 +198,7 @@ class ServerInstaller(InstallerWindow):
                                   "cloudflared_exe": self.cloudflared_exe})
         write_json(path, config)
         self.log("Configurazione salvata: " + path)
-        messagebox.showinfo("PC Server pronto", "Copia questo file su PC Client. La password Windows verrà inserita nell'app su PC Client.", parent=self.root)
+        messagebox.showinfo("PC Server pronto", "Copia questo file su PC Client. La password Windows verrà inserita nell'app su PC Client.\n\n" + LOCAL_LAUNCHER_NOTICE, parent=self.root)
 
 
 if __name__ == "__main__":

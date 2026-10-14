@@ -6,6 +6,11 @@ from tkinter import filedialog, messagebox, simpledialog
 
 
 ENGLISH = {
+    "Nella cartella iniziale di ComfyUI viene aggiunto automaticamente run_nvidia_gpu_close_instances.bat.": "run_nvidia_gpu_close_instances.bat is automatically added to the ComfyUI root folder.",
+    "Usalo per avviare ComfyUI da PC Server quando è ancora in esecuzione da PC Client: chiude le istanze aperte e riavvia ComfyUI.": "Use it to start ComfyUI on PC Server while it is still running from PC Client: it closes the existing instances and restarts ComfyUI.",
+    "La cartella ComfyUI selezionata non è più disponibile.": "The selected ComfyUI folder is no longer available.",
+    "Impossibile aggiungere il launcher nella cartella ComfyUI.": "Could not add the launcher to the ComfyUI folder.",
+    "Riprova": "Retry",
     # Setup and connection
     "Installa PC Server · ComfyUI Remote Manager": "Install PC Server · ComfyUI Remote Manager",
     "Installa PC Client · ComfyUI Remote Manager": "Install PC Client · ComfyUI Remote Manager",

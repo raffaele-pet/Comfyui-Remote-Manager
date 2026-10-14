@@ -204,8 +204,10 @@ class InstallerWindow:
         self.buttons.clear()
 
     def label(self, text):
-        tk.Label(self.form, text=self.t(text), bg=PANEL, fg=TEXT, font=("Segoe UI", 10),
-                 justify="left", anchor="w", wraplength=710).pack(fill="x", pady=(4, 8))
+        label = tk.Label(self.form, text=self.t(text), bg=PANEL, fg=TEXT, font=("Segoe UI", 10),
+                          justify="left", anchor="w", wraplength=710)
+        label.pack(fill="x", pady=(4, 8))
+        label.bind("<Configure>", lambda event: label.configure(wraplength=max(100, event.width)))
 
     def entry(self, label, value=""):
         self.label(label)

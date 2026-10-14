@@ -12,10 +12,11 @@ base = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--onefil
         "--workpath", str(root / "build" / "pyinstaller"),
         "--specpath", str(root / "build")]
 
-subprocess.run(base + ["--uac-admin", "--name", "install-server",
+subprocess.run(base + ["--add-data", f"{root / 'run_nvidia_gpu_close_instances.bat'}:.",
+                       "--uac-admin", "--name", "install-server",
                        str(root / "install_server.py")], check=True)
 
-payload = ["comfyui_remote_manager.py", "download_worker.py", "localization.py", "ui_theme.py",
+payload = ["comfyui_remote_manager.py", "download_worker.py", "localization.py", "ui_theme.py", "terminal_display.py",
            "requirements.txt", "run.bat"]
 args = []
 for name in payload:

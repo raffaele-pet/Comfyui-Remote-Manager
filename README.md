@@ -11,7 +11,7 @@ The PC Server needs the Windows portable edition of ComfyUI, with a `run*.bat` l
 1. Download [install-server.exe](./install-server.exe) on the PC Server and open it. Approve the Windows administrator prompt.
 2. Choose a language, the ComfyUI Portable folder, a startup batch file, and the Windows account to use for SSH. The installer prepares OpenSSH Server, Tailscale, and `cloudflared`.
 3. Open Tailscale from the installer, sign in, and verify the connection. Use the same tailnet on both computers. If unattended mode cannot be enabled automatically, enable it in Tailscale's settings.
-4. Verify `cloudflared`, then save `comfyui-remote-config.json` and copy it to the PC Client. The file contains connection settings and paths, but no password.
+4. Verify `cloudflared`. The installer adds `run_nvidia_gpu_close_instances.bat` to the selected ComfyUI Portable folder and explains how to use it. Save `comfyui-remote-config.json` and copy it to the PC Client. The file contains connection settings and paths, but no password.
 
 ## Install the PC Client
 
@@ -38,13 +38,13 @@ The connection profile is stored on the PC Client at `%LOCALAPPDATA%\ComfyUIRemo
 - Start Cloudflare and display the public link in the app.
 - Browse files over SFTP; upload, download, preview, rename, move, and delete them.
 - Download a URL directly on the PC Server without installing a persistent helper there.
-- Use an SSH PowerShell terminal and edit remote text files. Press Enter to run a command and Ctrl+C to interrupt it; Ctrl+C copies text when a selection is active.
+- Use an SSH PowerShell terminal and edit remote text files. The terminal shows the prompt and typing directly in the console, starting at the top, with cursor movement and scrollback. Press Enter to run a command and Ctrl+C to interrupt it; Ctrl+C copies text when a selection is active.
 
 **PC Server shortcuts** has two rows: User home, Desktop, and Recycle Bin; then ComfyUI Portable, custom nodes, models, diffusion models, text encoders, vae, and loras. The sidebar groups connection settings, ComfyUI settings, and language selection. Open the terminal from the file browser toolbar. The names **PC Server** and **PC Client** stay the same in both languages.
 
 ## Start ComfyUI locally after using it remotely
 
-Download [run_nvidia_gpu_close_instances.bat](./run_nvidia_gpu_close_instances.bat) and place it alongside `run_nvidia_gpu.bat` in the ComfyUI Portable folder on the PC Server. Use this additional launcher to close previous ComfyUI instances, verify that port 8188 is free, and then start ComfyUI with `--windows-standalone-build --listen 0.0.0.0 --enable-manager --enable-manager-legacy-ui`. Closing an instance interrupts its running jobs.
+The PC Server installer automatically adds [run_nvidia_gpu_close_instances.bat](./run_nvidia_gpu_close_instances.bat) alongside `run_nvidia_gpu.bat` in the selected ComfyUI Portable folder. You can also download it separately. Use this additional launcher to close previous ComfyUI instances, verify that port 8188 is free, and then start ComfyUI with `--windows-standalone-build --listen 0.0.0.0 --enable-manager --enable-manager-legacy-ui`. Closing an instance interrupts its running jobs.
 
 The launcher uses its own folder, so moving or renaming ComfyUI Portable does not require editing the batch file. A local launch opens `http://127.0.0.1:8188` in the default browser when ComfyUI is ready, including when cleanup needs administrator permission. Over SSH, the browser stays closed on the PC Server. It needs no separate cleanup script or Desktop log files. When closing an instance requires administrator permission, a local launch asks for it. Over SSH, a permission error stops startup and appears in the app. If another application owns port 8188, the launcher reports it and stops. To use this additional launcher from the app, set **Startup batch file** to `run_nvidia_gpu_close_instances.bat` and save it.
 

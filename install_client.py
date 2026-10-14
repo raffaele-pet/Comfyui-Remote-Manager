@@ -58,7 +58,7 @@ class ClientInstaller(InstallerWindow):
         if not payload.is_dir():
             payload = Path(__file__).parent
         self.app_dir.mkdir(parents=True, exist_ok=True)
-        for name in ("comfyui_remote_manager.py", "download_worker.py", "localization.py", "ui_theme.py",
+        for name in ("comfyui_remote_manager.py", "download_worker.py", "localization.py", "ui_theme.py", "terminal_display.py",
                      "requirements.txt", "run.bat"):
             source = payload / name
             if not source.is_file():
@@ -183,6 +183,7 @@ if __name__ == "__main__":
         assert (resource_path("payload") / "comfyui_remote_manager.py").is_file()
         assert (resource_path("payload") / "localization.py").is_file()
         assert (resource_path("payload") / "ui_theme.py").is_file()
+        assert (resource_path("payload") / "terminal_display.py").is_file()
         assert (resource_path("assets") / "ai-icons8.ico").is_file()
         installer.root.destroy()
     else:

@@ -21,6 +21,7 @@ from tkinter import ttk
 
 from localization import set_active_language, translate, wrap_dialogs
 from ui_theme import configure_dark_theme
+from terminal_display import SSHConsole
 
 try:
     from PIL import Image, ImageOps, ImageTk
@@ -131,7 +132,6 @@ TEXT_EXTENSIONS = {
 THUMBNAIL_MAX_FILE_SIZE = 64 * 1024 * 1024
 REMOTE_TEXT_MAX_FILE_SIZE = 5 * 1024 * 1024
 UPLOAD_FOLDER_EXCLUDED_DIRS = {".git"}
-ANSI_ESCAPE_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
 APP_DATA_DIR = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "ComfyUIRemoteManager"
 CONNECTION_PROFILE_PATH = APP_DATA_DIR / "connection.json"
@@ -565,16 +565,6 @@ class ComfyRemoteManager:
         sidebar_panel.pack(side="left", fill="y")
         sidebar_panel.pack_propagate(False)
 
-        preferences = tk.Frame(sidebar_panel, bg="#0b1220")
-        preferences.pack(side="bottom", fill="x", padx=10, pady=12)
-        tk.Label(preferences, text="Lingua", bg="#0b1220", fg=MUTED, anchor="w",
-                 font=("Segoe UI", 8)).pack(fill="x", pady=(0, 4))
-        self.language_select = ttk.Combobox(preferences, textvariable=self.language_choice,
-                                           values=("English", "Italiano"), state="readonly",
-                                           exportselection=False, font=("Segoe UI", 9))
-        self.language_select.pack(fill="x")
-        self.language_select.bind("<<ComboboxSelected>>", self.change_language)
-
         self.sidebar_canvas = tk.Canvas(sidebar_panel, bg="#0b1220", highlightthickness=0, width=268)
         self.sidebar_canvas.pack(side="left", fill="both", expand=True)
         self.sidebar_scroll = ttk.Scrollbar(sidebar_panel, orient="vertical", command=self.sidebar_canvas.yview)
@@ -659,20 +649,30 @@ class ComfyRemoteManager:
         for variable in (self.comfy_path_var, self.start_batch_var):
             variable.trace_add("write", lambda *_args: self.update_buttons())
 
+        preferences = tk.Frame(sidebar, bg="#0b1220")
+        preferences.pack(fill="x", padx=10, pady=(18, 14))
+        tk.Label(preferences, text="Lingua", bg="#0b1220", fg=MUTED, anchor="w",
+                 font=("Segoe UI", 9)).pack(fill="x", pady=(0, 6))
+        self.language_select = ttk.Combobox(preferences, textvariable=self.language_choice,
+                                           values=("English", "Italiano"), state="readonly",
+                                           exportselection=False, font=("Segoe UI", 9))
+        self.language_select.pack(fill="x")
+        self.language_select.bind("<<ComboboxSelected>>", self.change_language)
+
         self.remote_navigation_buttons = []
 
     def sidebar_section(self, parent, title):
         tk.Label(parent, text=title, bg="#0b1220", fg="#7ea6d8", anchor="w",
-                 font=("Segoe UI", 8, "bold")).pack(fill="x", padx=12, pady=(12, 5))
+                 font=("Segoe UI", 8, "bold")).pack(fill="x", padx=12, pady=(18, 8))
 
     def sidebar_field(self, parent, label, variable, show=None, side="top", width=None):
         container = tk.Frame(parent, bg="#0b1220")
         if side == "left":
-            container.pack(side="left", fill="x", expand=True, padx=(0, 5), pady=(0, 7))
+            container.pack(side="left", fill="x", expand=True, padx=(0, 5), pady=(0, 12))
         else:
-            container.pack(fill="x", padx=10, pady=(0, 7))
+            container.pack(fill="x", padx=10, pady=(0, 12))
         tk.Label(container, text=label, bg="#0b1220", fg=MUTED, anchor="w",
-                 font=("Segoe UI", 8)).pack(fill="x", pady=(0, 2))
+                 font=("Segoe UI", 9)).pack(fill="x", pady=(0, 4))
         entry = tk.Entry(
             container,
             textvariable=variable,
@@ -684,7 +684,7 @@ class ComfyRemoteManager:
             width=width,
             font=("Segoe UI", 9),
         )
-        entry.pack(fill="x", ipady=4)
+        entry.pack(fill="x", ipady=7)
         return entry
 
     def refresh_host_summary(self):
@@ -2920,83 +2920,53 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
             font=("Segoe UI", 10, "bold"),
         ).pack(fill="x", padx=12, pady=(12, 6))
 
-        output = tk.Text(
-            window,
-            bg="#080f1d",
-            fg="#c9d7ea",
-            insertbackground=TEXT,
-            relief="flat",
-            wrap="word",
-            font=("Consolas", 10),
-        )
-        output.pack(fill="both", expand=True, padx=12, pady=(0, 8))
-        terminal["output"] = output
-        output.insert(
-            "end",
-            "Apertura della sessione SSH interattiva...\n"
-            "La cartella e lo stato di PowerShell restano attivi tra un comando e l'altro.\n\n",
-        )
-        output.configure(state="disabled")
-
-        command_row = tk.Frame(window, bg=BG)
-        command_row.pack(fill="x", padx=12, pady=(0, 12))
-        tk.Label(command_row, text=">", bg=BG, fg="#58a6ff", font=("Consolas", 11, "bold")).pack(side="left")
-        entry = tk.Entry(
-            command_row,
-            bg=INPUT_BG,
-            fg=TEXT,
-            insertbackground=TEXT,
-            relief="flat",
-            font=("Consolas", 10),
-        )
-        entry.pack(side="left", fill="x", expand=True, padx=(8, 8), ipady=8)
-        terminal["entry"] = entry
-        entry.bind("<Return>", lambda _event: self.run_terminal_command(terminal))
-        window.bind("<Control-c>", lambda event: self.terminal_control_c(terminal, event))
-        entry.focus_set()
+        console = SSHConsole(window, lambda data: self.send_terminal_input(terminal, data),
+                             lambda columns, lines: self.resize_remote_terminal(terminal, columns, lines))
+        console.pack(fill="both", expand=True, padx=12, pady=(0, 12))
+        terminal["console"] = console
+        terminal["output"] = console.text
+        console.text.focus_set()
+        window.update_idletasks()
 
         try:
-            channel = self.client.invoke_shell(term="xterm", width=140, height=40)
+            channel = self.client.get_transport().open_session()
+            columns, lines = console.dimensions
+            channel.get_pty(term="xterm", width=columns, height=lines)
             terminal["channel"] = channel
             path_win = self.sftp_to_windows_path(remote_path)
-            channel.send("powershell.exe -NoLogo -NoProfile\r\n")
-            channel.send(f"Set-Location -LiteralPath {self.ps_literal(path_win)}\r\n")
+            script = f"Set-Location -LiteralPath {self.ps_literal(path_win)}; Clear-Host"
+            encoded = base64.b64encode(script.encode("utf-16le")).decode("ascii")
+            channel.exec_command("powershell.exe -NoLogo -NoProfile -NoExit -EncodedCommand " + encoded)
             threading.Thread(target=self._terminal_reader_thread, args=(terminal,), daemon=True).start()
         except Exception as error:
             self.append_terminal_output(terminal, f"Impossibile aprire il terminale SSH: {error}\n")
             terminal["closed"] = True
-            entry.configure(state="disabled")
+            console.disable()
 
-    def terminal_control_c(self, terminal, event):
-        widget = event.widget
-        if isinstance(widget, tk.Entry) and widget.selection_present():
+    def send_terminal_input(self, terminal, data):
+        channel = terminal.get("channel")
+        if terminal.get("closed") or not channel or channel.closed:
             return
-        if isinstance(widget, tk.Text) and widget.tag_ranges("sel"):
-            return
-        self.interrupt_remote_terminal(terminal)
-        return "break"
-
-    def run_terminal_command(self, terminal):
-        if terminal.get("closed") or not self.ensure_connected():
-            return
-        entry = terminal["entry"]
-        command_text = entry.get()
-        if not command_text:
-            return
-        entry.delete(0, "end")
         try:
-            terminal["channel"].send(command_text + "\r\n")
+            channel.sendall(data)
         except Exception as error:
             self.append_terminal_output(terminal, f"\n[Errore invio comando: {error}]\n")
+
+    def resize_remote_terminal(self, terminal, columns, lines):
+        channel = terminal.get("channel")
+        if channel and not channel.closed:
+            try:
+                channel.resize_pty(width=columns, height=lines)
+            except Exception:
+                pass
 
     def _terminal_reader_thread(self, terminal):
         channel = terminal.get("channel")
         try:
             while channel and not terminal.get("closed"):
                 if channel.recv_ready():
-                    data = channel.recv(8192).decode("utf-8", errors="replace")
+                    data = channel.recv(8192)
                     if data:
-                        data = ANSI_ESCAPE_RE.sub("", data).replace("\r\r\n", "\n").replace("\r\n", "\n")
                         self.enqueue("terminal_output", terminal, data)
                 elif channel.closed or channel.exit_status_ready():
                     break
@@ -3007,14 +2977,6 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
                 self.enqueue("terminal_output", terminal, f"\n[Sessione SSH interrotta: {error}]\n")
         finally:
             self.enqueue("terminal_done", terminal)
-
-    def interrupt_remote_terminal(self, terminal):
-        channel = terminal.get("channel")
-        if channel and not channel.closed:
-            try:
-                channel.send("\x03")
-            except Exception:
-                pass
 
     def close_remote_terminal(self, terminal):
         terminal["closed"] = True
@@ -3037,11 +2999,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
         window = terminal.get("window")
         if not window or not window.winfo_exists():
             return
-        output = terminal["output"]
-        output.configure(state="normal")
-        output.insert("end", text)
-        output.see("end")
-        output.configure(state="disabled")
+        terminal["console"].feed(text)
 
     def finish_terminal_command(self, terminal):
         window = terminal.get("window")
@@ -3049,7 +3007,7 @@ if ($leaf.StartsWith('$R', [System.StringComparison]::OrdinalIgnoreCase)) {{
             return
         self.append_terminal_output(terminal, "\n[Sessione SSH chiusa]\n")
         terminal["closed"] = True
-        terminal["entry"].configure(state="disabled")
+        terminal["console"].disable()
 
     def sftp_to_windows_path(self, path):
         path = self.normalize_sftp_path(path)
