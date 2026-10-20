@@ -4,6 +4,12 @@ ComfyUI Remote Manager is a Windows desktop app for running and managing ComfyUI
 
 Both installers and the app support English and Italian. Each installer asks for a language before setup begins, with English selected by default. The PC Client installer sets the app's initial language to your selection. In the app, change **Language** in the left sidebar; the choice is saved immediately for future launches. When running the app directly without an installer or saved preference, English is the default.
 
+## Demo
+
+![30-second animated demo: PC Server setup at the office, PC Client setup at home, and remote ComfyUI use](./assets/demo/comfyui-remote-manager-30s-en.gif)
+
+An illustrated 30-second walkthrough of setup and remote use. Icons by [Lucide](https://lucide.dev/) ([license](./assets/demo/LUCIDE-LICENSE.txt)).
+
 ## Install the PC Server
 
 The PC Server needs the Windows portable edition of ComfyUI, with a `run*.bat` launcher and `python_embeded\python.exe` in its main folder. The Windows account used for SSH must have a password; a Windows Hello PIN is not sufficient.
