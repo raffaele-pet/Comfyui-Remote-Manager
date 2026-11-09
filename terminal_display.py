@@ -21,6 +21,9 @@ class SSHConsole(tk.Frame):
         self.send = send
         self.resize_remote = resize
         self.closed = False
+        # In Windows Tk, Mod1 (0x08) is Num Lock and Mod2 is Alt.
+        alt_modifier = 0x10 if self.tk.call("tk", "windowingsystem") == "win32" else 0x08
+        self.alt_mask = 0x20000 | alt_modifier
         self.screen = ReplyScreen(80, 24, send)
         self.stream = pyte.ByteStream(self.screen)
         self.console_font = font.Font(self, family="Consolas", size=10)
@@ -86,14 +89,17 @@ class SSHConsole(tk.Frame):
 
     def keypress(self, event):
         control = bool(event.state & 4)
-        alt = bool(event.state & (8 | 0x20000))
+        alt = bool(event.state & self.alt_mask)
+        # AltGr can arrive as Ctrl+Alt. The OS has already composed the text.
+        if control and alt and event.char.isprintable():
+            control = alt = False
         key = event.keysym.lower()
-        if control and key == "c" and self.text.tag_ranges("sel"):
+        if control and not alt and key == "c" and self.text.tag_ranges("sel"):
             self.text.event_generate("<<Copy>>")
             return "break"
         if self.closed:
             return "break"
-        if (control and key == "v") or (event.keysym == "Insert" and event.state & 1):
+        if not alt and ((control and key == "v") or (event.keysym == "Insert" and event.state & 1)):
             return self.paste()
         keys = {"Return": "\r", "KP_Enter": "\r", "BackSpace": "\x7f", "Tab": "\t",
                 "Escape": "\x1b", "Up": "\x1b[A", "Down": "\x1b[B", "Right": "\x1b[C",

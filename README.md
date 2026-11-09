@@ -48,7 +48,7 @@ The connection profile is stored on the PC Client at `%LOCALAPPDATA%\ComfyUIRemo
 - Start Cloudflare and display the public link in the app.
 - Browse files over SFTP; upload, download, preview, rename, move, and delete them.
 - Download a URL directly on the PC Server without installing a persistent helper there.
-- Use an SSH PowerShell terminal and edit remote text files. The terminal shows the prompt and typing directly in the console, starting at the top, with cursor movement and scrollback. Press Enter to run a command and Ctrl+C to interrupt it; Ctrl+C copies text when a selection is active.
+- Use an SSH PowerShell terminal and edit remote text files. The terminal follows the active Windows keyboard layout on PC Client, independently of the app language. It shows the prompt and typing directly in the console, starting at the top, with cursor movement and scrollback. Press Enter to run a command and Ctrl+C to interrupt it; Ctrl+C copies text when a selection is active.
 
 **PC Server shortcuts** has two rows: User home, Desktop, and Recycle Bin; then ComfyUI Portable, custom nodes, models, diffusion models, text encoders, vae, and loras. The sidebar groups connection settings, ComfyUI settings, and language selection. Open the terminal from the file browser toolbar. The names **PC Server** and **PC Client** stay the same in both languages.
 
