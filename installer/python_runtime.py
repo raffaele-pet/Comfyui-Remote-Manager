@@ -7,7 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from platform_paths import local_app_data_directory, program_files_directory
+from app.platform_paths import local_app_data_directory, program_files_directory
 
 
 FLAGS = getattr(subprocess, "CREATE_NO_WINDOW", 0)

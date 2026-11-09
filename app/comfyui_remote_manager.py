@@ -19,10 +19,10 @@ from tkinter import Tk, StringVar, BooleanVar, filedialog, messagebox, simpledia
 import tkinter as tk
 from tkinter import ttk
 
-from localization import set_active_language, translate, wrap_dialogs
-from ui_theme import configure_dark_theme
-from terminal_display import SSHConsole
-from platform_paths import local_app_data_directory
+from app.localization import set_active_language, translate, wrap_dialogs
+from app.ui_theme import configure_dark_theme
+from app.terminal_display import SSHConsole
+from app.platform_paths import local_app_data_directory
 
 try:
     from PIL import Image, ImageOps, ImageTk

@@ -7,14 +7,14 @@ import subprocess
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
-from platform_paths import program_data_directory
+from app.platform_paths import program_data_directory
 
-from installer_common import (FLAGS, InstallerWindow, find_cloudflared, find_tailscale,
-                              is_admin, open_tailscale, run_command, tailscale_ip,
-                              desktop_directory, resource_path, validate_config, winget_install, write_json)
+from installer.installer_common import (FLAGS, InstallerWindow, find_cloudflared, find_tailscale,
+                                        is_admin, open_tailscale, run_command, tailscale_ip,
+                                        desktop_directory, validate_config, winget_install, write_json)
+from installer.layout import LOCAL_LAUNCHER, resource_path
 
 
-LOCAL_LAUNCHER = "run_nvidia_gpu_close_instances.bat"
 LOCAL_LAUNCHER_NOTICE = (
     "Nella cartella iniziale di ComfyUI viene aggiunto automaticamente run_nvidia_gpu_close_instances.bat.\n\n"
     "Usalo per avviare ComfyUI da PC Server quando è ancora in esecuzione da PC Client: "
@@ -67,7 +67,7 @@ class ServerInstaller(InstallerWindow):
             messagebox.showerror("Utente", "Inserisci l'utente Windows da usare per SSH.", parent=self.root)
             return
         if not is_admin():
-            messagebox.showerror("Amministratore", "Riapri install-server.exe come amministratore.", parent=self.root)
+            messagebox.showerror("Amministratore", "Riapri l'installer di PC Server come amministratore.", parent=self.root)
             return
         self.comfy_dir = str(path.resolve())
         self.start_batch = batch
@@ -176,7 +176,7 @@ class ServerInstaller(InstallerWindow):
         self.button("Chiudi", self.root.destroy)
 
     def install_local_launcher(self):
-        source = resource_path(LOCAL_LAUNCHER)
+        source = resource_path("launchers", LOCAL_LAUNCHER)
         destination = Path(self.comfy_dir) / LOCAL_LAUNCHER
         if not self.comfy_dir or not Path(self.comfy_dir).is_dir():
             raise RuntimeError("La cartella ComfyUI selezionata non è più disponibile.")

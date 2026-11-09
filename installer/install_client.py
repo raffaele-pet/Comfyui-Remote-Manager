@@ -6,18 +6,21 @@ import sys
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox
-from platform_paths import local_app_data_directory
-from python_runtime import find_python_executable, venv_is_usable
+from app.platform_paths import local_app_data_directory
+from installer.python_runtime import find_python_executable, venv_is_usable
 
-from installer_common import (InstallerWindow, create_shortcut, desktop_directory, find_tailscale,
-                              open_tailscale, resource_path, run_command, tailscale_ip,
-                              validate_config, winget_install, write_json)
+from installer.installer_common import (InstallerWindow, create_shortcut, desktop_directory, find_tailscale,
+                                        open_tailscale, run_command, tailscale_ip,
+                                        validate_config, winget_install, write_json)
+from installer.layout import APP_FILES, ICON_PATH, resource_path
 
 
 class ClientInstaller(InstallerWindow):
     def __init__(self):
         super().__init__("Installa PC Client · ComfyUI Remote Manager")
-        self.install_dir = local_app_data_directory() / "Programs" / "ComfyUIRemoteManager"
+        self.source_mode = not getattr(sys, "frozen", False)
+        self.install_dir = (resource_path() if self.source_mode else
+                            local_app_data_directory() / "Programs" / "ComfyUIRemoteManager")
         self.app_dir = self.install_dir / "app"
         self.venv_dir = self.install_dir / ".venv"
         self.language_step(self.intro_step, 4)
@@ -59,34 +62,26 @@ class ClientInstaller(InstallerWindow):
         if not python:
             raise RuntimeError("Python installato, ma non trovato. Riavvia l'installer.")
 
-        payload = resource_path("payload")
-        if not payload.is_dir():
-            payload = Path(__file__).parent
-        self.app_dir.mkdir(parents=True, exist_ok=True)
-        for name in ("comfyui_remote_manager.py", "download_worker.py", "localization.py", "ui_theme.py", "terminal_display.py", "platform_paths.py",
-                     "requirements.txt", "run.bat"):
-            source = payload / name
-            if not source.is_file():
-                raise RuntimeError("File incluso nell'installer non trovato: " + name)
-            if source.resolve() != (self.app_dir / name).resolve():
-                shutil.copy2(source, self.app_dir / name)
-        icon_source = resource_path("assets") / "ai-icons8.ico"
-        if not icon_source.is_file():
-            raise RuntimeError("Icona Icons8 non inclusa nell'installer.")
-        icon_target = self.app_dir / "ai-icons8.ico"
-        if icon_source.resolve() != icon_target.resolve():
-            shutil.copy2(icon_source, icon_target)
-        self.log("Programma installato.")
+        launcher = self.install_dir / "run.bat"
+        icon_target = self.install_dir / ICON_PATH
+        if not self.source_mode:
+            self.app_dir.mkdir(parents=True, exist_ok=True)
+            icon_target.parent.mkdir(parents=True, exist_ok=True)
+            for name in APP_FILES:
+                shutil.copy2(resource_path("app", name), self.app_dir / name)
+            shutil.copy2(resource_path("run.bat"), launcher)
+            shutil.copy2(resource_path(ICON_PATH), icon_target)
 
         venv_python = self.venv_dir / "Scripts" / "python.exe"
         self.prepare_environment(python)
         self.log("Installazione delle dipendenze Python...")
         run_command([str(venv_python), "-I", "-m", "pip", "install", "-r",
                      str(self.app_dir / "requirements.txt")], self.log)
+        self.log("Programma installato.")
 
         desktop = desktop_directory()
         create_shortcut(desktop / "ComfyUI Remote Manager.lnk",
-                        self.app_dir / "run.bat", self.app_dir, icon_target)
+                        launcher, self.install_dir, icon_target)
         self.log("Collegamento sul Desktop creato.")
         self.save_language_preference()
 
@@ -182,12 +177,9 @@ if __name__ == "__main__":
     installer = ClientInstaller()
     if "--self-test" in sys.argv:
         installer.root.withdraw()
-        assert (resource_path("payload") / "comfyui_remote_manager.py").is_file()
-        assert (resource_path("payload") / "localization.py").is_file()
-        assert (resource_path("payload") / "ui_theme.py").is_file()
-        assert (resource_path("payload") / "terminal_display.py").is_file()
-        assert (resource_path("payload") / "platform_paths.py").is_file()
-        assert (resource_path("assets") / "ai-icons8.ico").is_file()
+        assert all(resource_path("app", name).is_file() for name in APP_FILES)
+        assert resource_path("run.bat").is_file()
+        assert resource_path(ICON_PATH).is_file()
         installer.root.destroy()
     else:
         installer.root.mainloop()

@@ -80,7 +80,7 @@ ENGLISH = {
     "Installazione di OpenSSH Server...": "Installing OpenSSH Server...",
     "Seleziona una cartella ComfyUI Portable con il batch scelto e python_embeded\\python.exe.": "Select a ComfyUI Portable folder containing the chosen batch file and python_embeded\\python.exe.",
     "Inserisci l'utente Windows da usare per SSH.": "Enter the Windows user for SSH.",
-    "Riapri install-server.exe come amministratore.": "Restart install-server.exe as administrator.",
+    "Riapri l'installer di PC Server come amministratore.": "Restart the PC Server installer as administrator.",
     "Tailscale installato, ma l'eseguibile non è stato trovato. Riavvia l'installer.": "Tailscale was installed, but its executable was not found. Restart the installer.",
     "cloudflared installato, ma l'eseguibile non è stato trovato. Riavvia l'installer.": "cloudflared was installed, but its executable was not found. Restart the installer.",
     "Python installato, ma non trovato. Riavvia l'installer.": "Python was installed, but was not found. Restart the installer.",

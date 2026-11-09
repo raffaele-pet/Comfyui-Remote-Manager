@@ -1,5 +1,7 @@
 __pycache__/
 build/
+dist/
+*.exe
 *.spec
 .venv/
 assets/ai-icons8.png

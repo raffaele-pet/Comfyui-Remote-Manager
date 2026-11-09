@@ -6,16 +6,15 @@ import os
 import queue
 import shutil
 import subprocess
-import sys
 import tempfile
 import threading
 import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, ttk
 
-from localization import set_active_language, translate, wrap_dialogs
-from ui_theme import configure_dark_theme
-from platform_paths import desktop_directory, local_app_data_directory, program_files_directory
+from app.localization import set_active_language, translate, wrap_dialogs
+from app.ui_theme import configure_dark_theme
+from app.platform_paths import desktop_directory, local_app_data_directory, program_files_directory
 
 
 BG = "#0f1623"
@@ -25,10 +24,6 @@ MUTED = "#9aa8bd"
 BLUE = "#2f81f7"
 INPUT = "#0d1420"
 FLAGS = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-
-
-def resource_path(name):
-    return Path(getattr(sys, "_MEIPASS", Path(__file__).parent)) / name
 
 
 def run_command(args, log=None, timeout=None):
