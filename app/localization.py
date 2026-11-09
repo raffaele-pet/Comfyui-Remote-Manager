@@ -85,7 +85,6 @@ ENGLISH = {
     "cloudflared installato, ma l'eseguibile non è stato trovato. Riavvia l'installer.": "cloudflared was installed, but its executable was not found. Restart the installer.",
     "Python installato, ma non trovato. Riavvia l'installer.": "Python was installed, but was not found. Restart the installer.",
     "File incluso nell'installer non trovato:": "Bundled file not found:",
-    "Icona Icons8 non inclusa nell'installer.": "The Icons8 icon is missing from the installer.",
     "WinGet non trovato. Installa App Installer di Microsoft e riprova.": "WinGet was not found. Install Microsoft App Installer and try again.",
     "Interfaccia Tailscale non trovata. Aprila dal menu Start.": "Tailscale UI not found. Open it from the Start menu.",
     "Impossibile trovare la cartella Desktop di Windows.": "Could not find the Windows Desktop folder.",

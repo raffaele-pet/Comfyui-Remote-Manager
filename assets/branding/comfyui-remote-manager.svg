@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">ComfyUI Remote Manager</title>
+  <defs>
+    <linearGradient id="tile" x1="49" y1="22" x2="440" y2="494" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1a283e"/>
+      <stop offset=".58" stop-color="#0f1623"/>
+      <stop offset="1" stop-color="#0d1420"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="69" y1="23" x2="418" y2="483" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#425675"/>
+      <stop offset="1" stop-color="#253247"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="212" y1="105" x2="243" y2="423" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#58a6ff"/>
+      <stop offset="1" stop-color="#2f81f7"/>
+    </linearGradient>
+  </defs>
+  <rect x="9" y="9" width="494" height="494" rx="108" fill="url(#tile)" stroke="url(#edge)" stroke-width="3"/>
+  <g transform="translate(-10 -3)">
+    <path fill="url(#mark)" d="
+      M 269 96.5 H 382.5
+      C 399.3 96.5 409.8 109.1 405.2 126
+      L 391 173.9 C 385.6 193.1 369.5 205.3 350.9 205.3 H 255.5
+      C 250.6 205.3 247.5 207.7 246 212.5
+      L 220 301.7 C 218 309 222 313.5 228.4 313.5 H 321.2
+      C 338.4 313.5 347.6 327.3 342.2 344.9
+      L 328.7 390.6 C 323.2 409.2 306.5 422.4 287.8 422.4 H 175.2
+      C 157.5 422.4 148.3 409.1 153.5 391.5
+      L 162.6 360.5 C 164.1 354.5 161.4 349.7 154.7 349.7 H 130.3
+      C 111.8 349.7 101.6 335.5 107.3 318.3
+      L 141.1 201.7 C 146.5 182.8 163 168.8 182.1 168.8 H 209.4
+      C 214.7 168.8 217.7 166.3 219.2 161.1
+      L 229.1 126 C 234.1 109.6 251.7 96.5 269 96.5 Z"/>
+    <path d="M 281 270 H 327 Q 338 270 346 262 L 359 249 Q 368 240 380 240 H 413"
+      fill="none" stroke="#a8ceff" stroke-width="17" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="281" cy="270" r="19" fill="#e8eef8"/>
+    <circle cx="413" cy="240" r="19" fill="#e8eef8"/>
+  </g>
+</svg>

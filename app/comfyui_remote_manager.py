@@ -19,6 +19,7 @@ from tkinter import Tk, StringVar, BooleanVar, filedialog, messagebox, simpledia
 import tkinter as tk
 from tkinter import ttk
 
+from app.branding import apply_window_icon
 from app.localization import set_active_language, translate, wrap_dialogs
 from app.ui_theme import configure_dark_theme
 from app.terminal_display import SSHConsole
@@ -178,6 +179,7 @@ DISABLED_FG = "#708096"
 class ComfyRemoteManager:
     def __init__(self, root: Tk):
         self.root = root
+        apply_window_icon(root)
         self.language = self.load_language()
         set_active_language(self.language)
         wrap_dialogs()
